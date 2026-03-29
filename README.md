@@ -1,154 +1,132 @@
 # Eletromag Lab
 
-**Ambiente interativo e modular para resolução visual de exercícios de eletromagnetismo.**
+Laboratorio interativo para simulacoes de eletromagnetismo com foco educacional.
 
-Um laboratório educacional desenvolvido em Python, combinando front-end interativo (Streamlit) e motor numérico robusto, para permitir que estudantes explorem problemas de eletromagnetismo através de simulações visuais e editáveis.
+O projeto usa Streamlit para interface e um nucleo numerico em Python para calcular perdas no tanque, campo magnetico e comparacoes entre metodo analitico e Biot-Savart.
 
-## 🎯 Objetivo
+## Objetivo
 
-Construir uma ferramenta educacional para:
+- Permitir simulacao visual e numerica da Questao 1 (perdas no tanque).
+- Tornar os calculos transparentes, com comparacao entre metodos.
+- Manter arquitetura modular para evolucao de novos exercicios.
 
-- Editar **geometria** (dimensões, furos, condutores) pela interface
-- Aplicar **modelos matemáticos e físicos** aos parâmetros de entrada
-- **Visualizar** geometria, campos e resultados numéricos em tempo real
-- Evoluir o sistema para **múltiplos exercícios** de forma modular
+## Inicio rapido
 
-## 🚀 Início rápido
+### Pre-requisitos
 
-### Pré-requisitos
+- Python 3.12+
+- pip
 
-- Python 3.13+
-- pip ou uv
-
-### Instalação
+### Instalacao
 
 ```bash
-# Clone or navigate to the project
 cd projeto
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
 
-# Install dependencies
-pip install -r requirements.txt
+# Windows (PowerShell)
+.\.venv\Scripts\Activate.ps1
 
-# For development (includes pytest, ruff, black, mypy):
+# Linux/macOS
+source .venv/bin/activate
+
 pip install -r requirements.txt
-pip install -e ".[dev]"
+pip install -e .
 ```
 
-### Executar a aplicação
+### Executar a aplicacao
 
 ```bash
 streamlit run app/main.py
 ```
 
-A aplicação abrir-se-á em `http://localhost:8501`.
+A interface abre em http://localhost:8501.
 
-## 📁 Estrutura do Projeto
+## Estrutura do projeto
 
-```
+```text
 projeto/
 ├── app/
-│   ├── main.py                    # Entrada principal (Streamlit)
-│   ├── pages/                     # Páginas da aplicação
-│   ├── components/                # Componentes de UI
+│   ├── main.py
+│   ├── components/
 │   ├── core/
-│   │   ├── geometry/              # Geometria e malhas
-│   │   ├── electromagnetics/       # Cálculos EM e perdas
-│   │   └── exercises/             # Orquestração de exercícios
-│   ├── schemas/                   # Validação (Pydantic)
-│   └── services/                  # Lógica de serviço
-├── tests/                         # Testes automatizados
-├── pyproject.toml                 # Configuração de build
-├── requirements.txt               # Dependências
-├── specs.md                       # Especificação funcional completa
+│   │   ├── electromagnetics/
+│   │   ├── exercises/
+│   │   └── geometry/
+│   ├── pages/
+│   ├── schemas/
+│   └── services/
+├── tests/
+├── pyproject.toml
+├── requirements.txt
+├── specs.md
 └── README.md
 ```
 
-## 📋 Fase 1 — MVP da Questão 1
+## Questao 1: estado atual
 
-### Questão 1: Perdas no tanque devido aos condutores carregados
+### Parametros principais na interface
 
-A primeira fase implementa o cálculo de perdas magnéticas em uma placa com furos por onde passam condutores carregados.
+- Placa: largura, altura e espessura.
+- Furos: diametro configuravel no frontend (padrao 82 mm).
+- Condutores: corrente global Im e espacamento global a para arranjo de 3 condutores.
+- Material: permeabilidade magnetica (mu) e condutividade (sigma), com presets.
+- Frequencia de operacao.
 
-#### Entradas editáveis
-- Dimensões da placa (largura, altura, espessura)
-- Furos (quantidade, posição, diâmetro)
-- Condutores (posição, corrente)
-- Propriedades do material (μ, σ)
-- Frequência, resolução da malha
+### Malha e desempenho
 
-#### Saídas esperadas
-- Valor total de perda [W]
-- Distribuição espacial de perdas (heatmap)
-- Campo magnético na placa (heatmap)
-- Estatísticas numéricas
+- A malha do calculo principal esta fixa em 1000x1000 na interface da Questao 1.
+- Visualizacoes 2D e 3D usam geracao sob demanda para manter a interface responsiva.
+- Em graficos de varredura, o numero de pontos pode ser limitado para evitar travamentos.
 
-## 🔧 Desenvolvimento
+### Metodos de calculo
 
-### Executar testes
+- Biot-Savart:
+	- Campo magnetico por formulacao vetorial generica.
+	- Caso especial analitico para 3 condutores colineares e igualmente espacados.
+	- Resultado principal de perdas usando coeficiente normalized.
+	- Valor com coeficiente slide19_strict exibido em notas de referencia.
+- Metodo analitico:
+	- Formula fechada com ln(b/a)=4.347 para referencia comparativa.
 
-```bash
-pytest tests/
-pytest tests/ -v --cov=app  # Com cobertura
-```
+### Saidas
 
-### Verificar qualidade de código
+- Perda total por metodo analitico (W).
+- Perda total por Biot-Savart (W).
+- Campo magnetico maximo e densidade de perda maxima.
+- Area valida de integracao (placa sem furos).
+- Notas de simulacao e comparacao percentual entre metodos.
 
-```bash
-# Lint
-ruff check app/ tests/
+## Qualidade e testes
 
-# Formatação
-black app/ tests/
-
-# Type checking
-mypy app/ tests/
-```
-
-### Formatar código automaticamente
+Os testes automatizados ficam em tests/ e sao os unicos coletados por padrao via configuracao do pytest.
 
 ```bash
-black app/ tests/
-ruff check --fix app/ tests/
+python -m pytest --tb=short -q
 ```
 
-## 📚 Referências
+Ultima validacao local: 71 testes passando.
 
-- **Especificação completa**: veja [specs.md](specs.md)
-- **Seção 14**: Fluxo da simulação
-- **Seção 22**: Diretriz para uso com Copilot
-- **Seção 23**: Primeiro backlog técnico
+## Desenvolvimento
 
-## 📝 Stack
+### Lint e formatacao
 
-### Front-end
-- **Streamlit**: Interface interativa
-- **Plotly**: Gráficos e heatmaps
+```bash
+ruff check app tests
+black app tests
+```
 
-### Backend / Numérico
-- **NumPy**: Operações matriciais
-- **SciPy**: Integração numérica, funções especiais
-- **Pydantic**: Validação de dados
-- **Shapely**: Manipulação geométrica (futuro)
-- **SymPy**: Suporte simbólico (futuro)
+### Type checking
 
-### QA & Tooling
-- **Pytest**: Testes automatizados
-- **Ruff**: Linting
-- **Black**: Formatação
-- **Mypy**: Type checking
+```bash
+mypy app tests
+```
 
-## 📜 Licença
+## Referencias
+
+- Especificacao funcional: specs.md
+- Notas tecnicas complementares: IMPLEMENTATION_NOTES.md
+
+## Licenca
 
 MIT
-
-## 👤 Autores
-
-- **Renan** — desenvolvimento inicial
-
----
-
-**Status**: Fase 1 em desenvolvimento (BL-001 e BL-002 em progresso)

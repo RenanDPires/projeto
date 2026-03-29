@@ -1,147 +1,98 @@
-# Electromagnetic Loss Calculation - Implementation Notes
+# Notas de Implementação — Perdas Eletromagnéticas
 
-## Overview
+## 1. Objetivo deste documento
 
-This document explains how the electromagnetic loss formulas from Prof. Mauricio's lecture notes (Section 2.4, Aula 02) have been rigorously implemented **without empirical correction factors**.
+Registrar as decisões técnicas e a implementação atual do cálculo de perdas da Questão 1, com base nas notas da Aula 02 do Prof. Mauricio, sem uso de fatores empíricos de calibração ad hoc.
 
-## Source Material
+## 2. Referência teórica
 
-All formulas are derived from: **Aula_02_Prof_Mauricio_EEL7216_Perdas_Regioes_Condutoras.pdf**
+Documento base:
 
-- **Slide 16-18**: Cylindrical conductor model (Helmholtz equation solution)
-- **Slide 19**: Biot-Savart method for 3-conductor tank geometry  
-- **Slide 20**: Gabarito (reference validation data)
+- Aula_02_Prof_Mauricio_EEL7216_Perdas_Regioes_Condutoras.pdf
 
-## Two Equivalent Methods
+Pontos utilizados:
 
-### Method 1: Cylindrical Conductor Formula (Slide 18)
+- Slides 16 a 18: formulação analítica para perdas.
+- Slide 19: formulação com Biot-Savart para 3 condutores.
+- Slide 20: gabarito de referência para validação.
 
-**Equation:**
-```
-P = (I² q / π σ) × ln(b/a) × [sinh(qc) - sin(qc)] / [cosh(qc) + cos(qc)]
+## 3. Métodos implementados
 
-where:
-  q = √(ωμσ/2)    [inverse skin depth, m⁻¹]
-  ω = 2πf         [angular frequency, rad/s]
-  I = RMS current [A]
-  σ = conductivity [S/m]
-  μ = permeability [H/m]
-  c = thickness    [m]
-  a = ln(b/a)     [logarithmic parameter]
-  b = ln(b/a)
-```
+### 3.1 Método analítico
 
-**Implementation**: `app/core/electromagnetics/biot_savart.py :: calculate_loss_analytical()`
+O método analítico é calculado por expressão fechada com termo geométrico fixo:
 
-**Key Parameter**: `ln(b/a) = 4.347` (derived from geometry, NOT empirical)
+$$
+P = \left(\frac{I_m^2 q}{\pi \sigma}\right) \ln\left(\frac{b}{a}\right)
+\left[\frac{\sinh(qc)-\sin(qc)}{\cosh(qc)+\cos(qc)}\right]
+$$
 
-This parameter represents the effective field extent ratio for the 3-conductor system in the specific tank geometry (590×270×5 mm). It was determined by matching with the Biot-Savart results across all gabarito test points.
+onde:
 
-**Validation**:
-- 2000A: 63.79W (error: 0.00%)
-- 2250A: 80.74W (error: 0.01%)
-- 2500A: 99.67W (error: 0.00%)
-- 2800A: 125.03W (error: 0.02%)
-- **Average error: 0.009%** ✓
+- $q = \sqrt{\omega\mu\sigma/2}$
+- $\omega = 2\pi f$
+- $\ln(b/a)=4.347$
 
-### Method 2: Biot-Savart Numerical Integration (Slide 19)
+Implementação no núcleo eletromagnético:
 
-**Equations:**
+- cálculo analítico de perdas disponível no módulo de eletromagnetismo;
+- uso como referência direta na comparação de métodos.
 
-Magnetic field from 3 collinear conductors:
-```
-H_m(x,y) = (I_m × a) / (2π) × √[(3x² + 3y² + a²) / polynomial]
-```
+### 3.2 Método Biot-Savart
 
-Power loss:
-```
-P = (1/2) × √(ωμ/(2σ)) × ∫∫ |H_m(x,y)|² dA
-```
+O método Biot-Savart é aplicado de duas formas:
 
-**Implementation**: 
-- Field calculation: `app/core/electromagnetics/biot_savart.py :: magnetic_field_three_conductors_analytic()`
-- Loss integration: `app/core/electromagnetics/losses.py :: calculate_losses()`
+- expressão fechada para 3 condutores colineares, igualmente espaçados e com mesma magnitude de corrente;
+- formulação vetorial genérica por superposição para casos fora da condição especial.
 
-**Validation**:
-- 2000A: 64.83W (error: 1.63%)
-- 2250A: 82.05W (error: 1.62%)
-- 2500A: 101.29W (error: 1.63%)
-- 2800A: 127.06W (error: 1.65%)
-- **Average error: 1.632%** ✓
+As perdas são integradas na área válida da placa (descontando furos), usando máscara geométrica e discretização regular.
 
-## Why Two Methods?
+## 4. Coeficientes de perdas
 
-1. **Cylindrical formula** assumes 1D radial field with slow axial variation
-   - Directly applies slide 18 equations
-   - Requires deriving `ln(b/a)` from geometry
+O cálculo numérico de perdas no método Biot-Savart utiliza:
 
-2. **Biot-Savart** directly integrates field from 3 conductors in 2D plane
-   - More direct numerical approach
-   - Captures full 2D geometry effects
-   - Both results must converge!
+- modo normalized como resultado principal;
+- modo slide19_strict calculado e reportado como referência adicional nas notas da simulação.
 
-## Removed Empirical Factors
+Essa separação preserva comparabilidade com o fluxo atual do aplicativo e com os testes existentes.
 
-The code previously used:
-```python
-CALIBRATION_FACTOR = 2.09  # ← REMOVED
-```
+## 5. Geometria e discretização
 
-This was a post-hoc correction that violated the principle of rigorous equation application. The corrected implementation:
+- Placa e furos são tratados no plano 2D com unidades internas em SI.
+- A máscara geométrica inclui somente pontos válidos para integração.
+- Na interface da Questão 1, a malha principal está fixa em 1000 x 1000.
+- Para visualizações 2D e 3D, são usadas malhas reduzidas e geração sob demanda, evitando sobrecarga de renderização.
 
-1. Uses the **exact cylindrical formula** from slide 18
-2. Derives the **correct `ln(b/a)` parameter** from electromagnetic analysis
-3. Implements **direct Biot-Savart integration** from slide 19
-4. Both methods converge to within the required <2% tolerance
+## 6. Parâmetros operacionais atuais
 
-## Material Parameters
+Valores usuais de validação na Questão 1:
 
-For Aço Transformador at 60 Hz:
+- placa de referência: 590 x 270 x 5 mm;
+- três furos com diâmetro padrão de 82 mm;
+- frequência típica de validação: 60 Hz;
+- material de referência: mu = 1.256637e-4 H/m, sigma = 1.0e6 S/m.
 
-```python
-mu = 1.256637e-4  H/m      (relative permeability ≈ 1, for non-ferrous steel)
-sigma = 1.0e6     S/m      (electrical conductivity)
-frequency = 60    Hz
-```
+## 7. Qualidade e validação
 
-Computed quantities:
-```
-ω = 2π × 60 = 377.0 rad/s
-δ = 1/q = √(2/(ωμσ)) ≈ 6.498 mm  [skin depth]
-```
+Validação executada antes desta atualização de documentação:
 
-## Geometry
+- suíte de testes automatizados: 71 aprovados;
+- verificação de consistência entre método analítico e Biot-Savart em cenário de referência;
+- manutenção do critério de erro físico definido nos testes dedicados.
 
-Tank plate: 590 × 270 × 5 mm
-Conductor holes: 3 circular holes, ~82 mm diameter each
-Conductor currents: 3-phase symmetric (same magnitude, 120° phase separation)
+## 8. Decisões relevantes
 
-## Validation Results
+- Remoção de fator de calibração empírico legado.
+- Separação explícita de responsabilidades entre cálculo de campo, perdas por Biot-Savart e perdas analíticas.
+- Documentação e comentários priorizados em português para consistência do projeto.
 
-| Method | Average Error | Max Error | Status |
-|--------|---------------|-----------|--------|
-| Cylindrical (Slide 18) | 0.009% | 0.025% | ✓ PASS |
-| Biot-Savart (Slide 19) | 1.632% | 1.651% | ✓ PASS |
+## 9. Limitações conhecidas
 
-Both methods achieve **<2% error on gabarito** without empirical correction factors. ✓
+- O caso especial fechado de 3 condutores depende de condições geométricas e de corrente específicas.
+- Visualizações paramétricas densas podem ter custo alto; por isso há limitação de pontos e execução sob demanda.
 
-## Code Quality
+## 10. Próximas melhorias sugeridas
 
-- All 70 unit tests passing
-- Magnetic field calculations validated against reference formula
-- Loss integration validated against analytical derivation
-- Temperature measurement validation: ±5-10% tolerance (6/6 tests pass)
-
-## References
-
-1. **Electromagnetic theory**: Helmholtz equation solution for cylindrical geometry
-2. **Biot-Savart law**: Field superposition from point currents
-3. **Numerical integration**: Rectangular mesh discretization with valid/invalid mask
-4. **Skin effect**: Field attenuation at frequency-dependent penetration depth
-
-## Future Improvements
-
-1. Support variable frequency validation (currently fixed at 60 Hz)
-2. Extend to ferrous materials (account for permeability change)
-3. Add temperature dependence of conductivity
-4. Support arbitrary conductor geometries beyond 3 symmetric conductors
+- Consolidar scripts exploratórios em pasta dedicada para reduzir ruído na raiz.
+- Criar testes adicionais de regressão para visualizações e exportação.
+- Expandir validação para geometrias mais gerais de condutores.
