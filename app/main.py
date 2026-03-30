@@ -11,6 +11,10 @@ import io
 import csv
 import json
 import sys
+import textwrap
+import importlib
+import subprocess
+import shutil
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
@@ -123,6 +127,164 @@ def _summary_csv_bytes(payload: dict) -> bytes:
         writer.writerow([key, value])
 
     return output.getvalue().encode("utf-8")
+
+
+def _figure_to_png_bytes(fig: go.Figure, width: int = 1400, height: int = 900) -> bytes:
+    """Converte figura Plotly em PNG para insercao no PDF."""
+    try:
+        return fig.to_image(format="png", width=width, height=height, scale=2)
+    except Exception as exc:
+        # Kaleido 1.x depende de um Chrome gerenciado; tenta provisionar automaticamente.
+        if "browser seemed to close immediately" not in str(exc).lower():
+            raise
+
+        chrome_installer = shutil.which("choreo_get_chrome")
+        if chrome_installer is None:
+            scripts_dir = Path(sys.executable).resolve().parent
+            candidate = scripts_dir / "choreo_get_chrome.exe"
+            if candidate.exists():
+                chrome_installer = str(candidate)
+
+        if chrome_installer is None:
+            raise
+
+        subprocess.run([chrome_installer], check=True, capture_output=True, text=True)
+        return fig.to_image(format="png", width=width, height=height, scale=2)
+
+
+def _build_exercise_01_pdf(
+    calc_input: Exercise01Input,
+    result,
+    analytical_details: dict,
+    biot_details: dict,
+    fig_geo: go.Figure | None,
+    figures_2d: list[tuple[str, go.Figure]],
+    figures_3d: list[tuple[str, go.Figure]],
+    include_2d: bool,
+    include_3d: bool,
+) -> bytes:
+    """Gera PDF unico com geometria, equacoes, resultados e visualizacoes."""
+    A4 = importlib.import_module("reportlab.lib.pagesizes").A4
+    ImageReader = importlib.import_module("reportlab.lib.utils").ImageReader
+    canvas = importlib.import_module("reportlab.pdfgen.canvas")
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    page_w, page_h = A4
+    margin = 36
+
+    def _new_page() -> float:
+        c.showPage()
+        return page_h - margin
+
+    def _write_lines(lines: list[str], y: float, size: int = 10, step: float = 14.0) -> float:
+        c.setFont("Helvetica", size)
+        for line in lines:
+            if y < margin + 30:
+                y = _new_page()
+                c.setFont("Helvetica", size)
+            c.drawString(margin, y, line)
+            y -= step
+        return y
+
+    def _draw_figure_page(title: str, fig: go.Figure, subtitle: str | None = None):
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(margin, page_h - margin, title)
+        y_top = page_h - margin - 22
+        if subtitle:
+            c.setFont("Helvetica", 10)
+            c.drawString(margin, y_top, subtitle)
+            y_top -= 18
+
+        img_bytes = _figure_to_png_bytes(fig)
+        img = ImageReader(io.BytesIO(img_bytes))
+        img_w, img_h = img.getSize()
+
+        avail_w = page_w - 2 * margin
+        avail_h = y_top - margin
+        ratio = min(avail_w / img_w, avail_h / img_h)
+        draw_w = img_w * ratio
+        draw_h = img_h * ratio
+        x = margin + (avail_w - draw_w) / 2
+        y = margin + (avail_h - draw_h) / 2
+        c.drawImage(img, x, y, width=draw_w, height=draw_h, preserveAspectRatio=True, mask="auto")
+        c.showPage()
+
+    # Capa e resumo
+    y = page_h - margin
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(margin, y, "Eletromag - Exercicio 1")
+    y -= 26
+    c.setFont("Helvetica", 10)
+    c.drawString(margin, y, f"Gerado em: {datetime.utcnow().isoformat(timespec='seconds')}Z")
+    y -= 24
+
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(margin, y, "Resultados")
+    y -= 18
+    y = _write_lines(
+        [
+            f"Perda analitica: {result.total_loss_analytical_w:.4f} W",
+            f"Perda aproximada (Biot-Savart): {result.total_loss_approximate_w:.4f} W",
+            f"Maximo campo H: {result.max_h_field:.4f} A/m",
+            f"Maxima densidade de perdas: {result.max_loss_density:.4f} W/m2",
+            f"Area valida: {result.valid_area_m2:.6f} m2",
+        ],
+        y,
+    )
+
+    y -= 8
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(margin, y, "Equacoes")
+    y -= 18
+    equations = [
+        "Metodo analitico:",
+        "P = ((Im^2 * q) / (pi * sigma)) * ln(b/a) * ((sinh(qc)-sin(qc))/(cosh(qc)+cos(qc)))",
+        "",
+        "Metodo aproximado (Biot-Savart):",
+        "Hm(x,y) = (Im*a / (2*pi)) * sqrt((3x^2+3y^2+a^2)/((x^2+y^2)*(x^4+y^4+2x^2y^2-2a^2x^2+2a^2y^2+a^4)))",
+        "P = (1/(2*pi))*sqrt((omega*mu)/(2*sigma)) * integral integral |Hm(x,y)|^2 dx dy",
+    ]
+    wrapped_equations: list[str] = []
+    for line in equations:
+        if not line:
+            wrapped_equations.append("")
+            continue
+        wrapped_equations.extend(textwrap.wrap(line, width=110) or [line])
+    y = _write_lines(wrapped_equations, y)
+
+    y -= 8
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(margin, y, "Parametros de calculo")
+    y -= 18
+    param_lines = [
+        f"f = {calc_input.frequency_hz:.3f} Hz",
+        f"mu = {calc_input.material.mu:.6e} H/m",
+        f"sigma = {calc_input.material.sigma:.6e} S/m",
+        f"espessura = {calc_input.plate.thickness_mm:.3f} mm",
+        f"Im (medio abs) = {analytical_details['im_rms_a']:.3f} A",
+        f"omega = {analytical_details['omega_rad_s']:.6f} rad/s",
+        f"a (3 condutores) = {biot_details['a_mm']:.3f} mm" if biot_details["a_mm"] is not None else "a (3 condutores) = n/a",
+    ]
+    _write_lines(param_lines, y)
+    c.showPage()
+
+    # Figura da geometria (sempre que disponivel)
+    if fig_geo is not None:
+        _draw_figure_page("Figura da geometria", fig_geo)
+
+    # Graficos 2D opcionais
+    if include_2d:
+        for title, fig in figures_2d:
+            _draw_figure_page(f"Grafico 2D - {title}", fig)
+
+    # Graficos 3D opcionais
+    if include_3d:
+        for title, fig in figures_3d:
+            _draw_figure_page(f"Grafico 3D - {title}", fig)
+
+    c.save()
+    return buffer.getvalue()
 
 
 def _apply_im_to_conductors(
@@ -248,6 +410,31 @@ def _limit_sweep_points(values: np.ndarray, max_points: int = 25) -> np.ndarray:
     return values[np.unique(indices)]
 
 
+def _show_exercise_01_intro_sections() -> None:
+    """Exibe base teorica e resultados validados com conteudo expansivel."""
+    slides_dir = PROJECT_ROOT / "base_teorica" / "Exercicio_1"
+    section_slides = {
+        "Base teórica 1: Método analítico": [
+            "pagina 16.png",
+            "pagina 17.png",
+            "pagina 18.png",
+        ],
+        "Base teórica 2: Método Biot-Savart": ["pagina 19.png"],
+        "Resultados validados": ["pagina 20.png"],
+    }
+
+    st.markdown("### Apresentação da questão")
+
+    for section_title, filenames in section_slides.items():
+        with st.expander(section_title, expanded=False):
+            for filename in filenames:
+                img_path = slides_dir / filename
+                if img_path.exists():
+                    st.image(str(img_path), caption=filename, use_container_width=True)
+                else:
+                    st.warning(f"Slide não encontrado: {img_path}")
+
+
 def main():
     """Funcao principal da aplicacao."""
     # Navegacao lateral
@@ -351,6 +538,8 @@ def show_exercise_01_page():
     st.markdown("## Questão 1: Perdas no tanque devido aos condutores carregados")
 
     st.divider()
+    _show_exercise_01_intro_sections()
+    st.divider()
 
     # Inicializacao do estado da sessao
     if "exercise_01_input" not in st.session_state:
@@ -373,18 +562,12 @@ def show_exercise_01_page():
         )
         st.session_state.im_a = float(first_current)
 
-    if "use_global_im" not in st.session_state:
-        st.session_state.use_global_im = True
-
     if "a_spacing_mm" not in st.session_state:
         if len(st.session_state.exercise_01_input.conductors) == 3:
             xs = sorted([c.x_mm for c in st.session_state.exercise_01_input.conductors])
             st.session_state.a_spacing_mm = float((xs[2] - xs[1] + xs[1] - xs[0]) / 2.0)
         else:
             st.session_state.a_spacing_mm = 100.0
-
-    if "use_global_a" not in st.session_state:
-        st.session_state.use_global_a = True
 
     input_data = st.session_state.exercise_01_input
     material_presets = get_material_presets()
@@ -470,57 +653,38 @@ def show_exercise_01_page():
                 disabled=True,
             )
 
-    col_freq, col_mesh = st.columns(2)
+    frequency = st.number_input(
+        "Frequência [Hz]",
+        min_value=0.1,
+        value=input_data.frequency_hz,
+        step=1.0,
+        key="frequency",
+    )
+    im_a = st.number_input(
+        "Corrente de referencia Im [A]",
+        min_value=0.0,
+        value=float(st.session_state.im_a),
+        step=10.0,
+        key="im_a",
+        help="Magnitude de corrente aplicada a todos os condutores.",
+    )
 
-    with col_freq:
-        frequency = st.number_input(
-            "Frequência [Hz]",
-            min_value=0.1,
-            value=input_data.frequency_hz,
-            step=1.0,
-            key="frequency",
-        )
-        im_a = st.number_input(
-            "Corrente de referencia Im [A]",
-            min_value=0.0,
-            value=float(st.session_state.im_a),
-            step=10.0,
-            key="im_a",
-            help="Magnitude de corrente aplicada aos condutores quando habilitado.",
-        )
-        use_global_im = st.checkbox(
-            "Usar Im global para todos os condutores",
-            value=st.session_state.use_global_im,
-            key="use_global_im",
-        )
-
-        a_spacing_mm = st.number_input(
-            "a (distância x entre centros) [mm]",
-            min_value=0.0,
-            value=float(st.session_state.a_spacing_mm),
-            step=1.0,
-            key="a_spacing_mm",
-            help="Aplicado nas posições x quando habilitado e quando houver exatamente 3 furos/3 condutores.",
-        )
-        use_global_a = st.checkbox(
-            "Usar a global para posicionamento em x",
-            value=st.session_state.use_global_a,
-            key="use_global_a",
-        )
+    a_spacing_mm = st.number_input(
+        "a (distância x entre centros) [mm]",
+        min_value=0.0,
+        value=float(st.session_state.a_spacing_mm),
+        step=1.0,
+        key="a_spacing_mm",
+        help="Aplicado nas posições x quando houver exatamente 3 furos/3 condutores.",
+    )
 
     mesh_nx = 1000
     mesh_ny = 1000
 
-    with col_mesh:
-        st.markdown("#### Discretização")
-        st.info(f"Malha fixa em {mesh_nx} x {mesh_ny} pontos.")
-
     edited_holes = list(input_data.holes)
     edited_conductors = list(input_data.conductors)
-
-    if use_global_im:
-        st.caption("Com Im global ativo, os valores de corrente servem para definir apenas o sinal (+/-).")
-    if use_global_a and (len(edited_holes) != 3 or len(edited_conductors) != 3):
+    st.caption("Os valores individuais de corrente definem apenas o sinal (+/-); Im define a magnitude global.")
+    if len(edited_holes) != 3 or len(edited_conductors) != 3:
         st.caption("O parâmetro a global requer exatamente 3 furos e 3 condutores.")
 
     # ─── MONTAGEM DA ENTRADA DE SIMULACAO ───────────────────────────────────
@@ -528,7 +692,7 @@ def show_exercise_01_page():
         holes_for_sim = edited_holes
         conductors_positioned = edited_conductors
 
-        if use_global_a and len(edited_holes) == 3:
+        if len(edited_holes) == 3:
             holes_for_sim = _apply_spacing_a_to_x_positions(edited_holes, float(a_spacing_mm))
 
         # Aplica diametro global dos furos definido no frontend
@@ -537,16 +701,11 @@ def show_exercise_01_page():
             for h in holes_for_sim
         ]
 
-        if use_global_a and len(edited_conductors) == 3:
+        if len(edited_conductors) == 3:
             conductors_positioned = _apply_spacing_a_to_x_positions(
                 edited_conductors, float(a_spacing_mm)
             )
-
-        conductors_for_sim = (
-            _apply_im_to_conductors(conductors_positioned, im_a)
-            if use_global_im
-            else conductors_positioned
-        )
+        conductors_for_sim = _apply_im_to_conductors(conductors_positioned, im_a)
 
         draft_input = Exercise01Input(
             plate=PlateInput(
@@ -636,6 +795,7 @@ def show_exercise_01_page():
     st.divider()
     st.markdown("### Geometria")
 
+    fig_geo = None
     try:
         plate = create_plate_from_input(calc_input.plate, calc_input.holes)
         conductor_positions = np.array(
@@ -732,6 +892,7 @@ def show_exercise_01_page():
 
     st.divider()
 
+    figures_2d: list[tuple[str, go.Figure]] = []
     with st.expander("Visualizações 2D", expanded=True):
         st.caption("Visualizações com malha 80 x 80 para manter desempenho interativo.")
         show_2d = st.toggle("Gerar gráficos 2D", value=False, key="show_2d_graphs")
@@ -741,12 +902,7 @@ def show_exercise_01_page():
             st.markdown("#### Curvas de perdas por corrente")
 
             if calc_input.conductors:
-                if use_global_im:
-                    reference_current_a = float(max(im_a, 0.0))
-                else:
-                    reference_current_a = float(
-                        max(abs(c.current_a) for c in calc_input.conductors)
-                    )
+                reference_current_a = float(max(im_a, 0.0))
 
                 # Preserva o padrao de sinais de corrente do ultimo estado calculado
                 base_conductors = calc_input.conductors
@@ -796,6 +952,7 @@ def show_exercise_01_page():
                     height=350,
                 )
                 st.plotly_chart(fig_losses, use_container_width=True)
+                figures_2d.append(("Perdas por corrente", fig_losses))
                 st.caption(
                     f"Intervalo avaliado: 0 até {end_current_int} A com passo de 1 A (corrente informada + 10%)."
                 )
@@ -849,6 +1006,7 @@ def show_exercise_01_page():
                 height=350,
             )
             st.plotly_chart(fig_thickness, use_container_width=True)
+            figures_2d.append(("Perdas por espessura", fig_thickness))
             st.caption(
                 f"Intervalo avaliado: 0.1 até {end_thickness_mm:.1f} mm (espessura informada + 10%)."
             )
@@ -894,12 +1052,14 @@ def show_exercise_01_page():
                 height=350,
             )
             st.plotly_chart(fig_frequency, use_container_width=True)
+            figures_2d.append(("Perdas por frequencia", fig_frequency))
             st.caption(
                 f"Intervalo avaliado: 0.1 até {end_frequency_hz:.1f} Hz (frequência informada + 10%)."
             )
 
     st.divider()
 
+    figures_3d: list[tuple[str, go.Figure]] = []
     with st.expander("Visualizações 3D", expanded=False):
         st.caption("Visualizações com malha 80 x 80 e grade reduzida para manter desempenho interativo.")
         show_3d = st.toggle("Gerar gráficos 3D", value=False, key="show_3d_graphs")
@@ -908,11 +1068,7 @@ def show_exercise_01_page():
         elif not calc_input.conductors:
             st.info("Adicione ao menos um condutor para visualizar o gráfico 3D.")
         else:
-            reference_current_a = (
-                float(max(im_a, 0.0))
-                if use_global_im
-                else float(max(abs(c.current_a) for c in calc_input.conductors))
-            )
+            reference_current_a = float(max(im_a, 0.0))
             base_conductors = calc_input.conductors
 
             st.markdown("#### Gráfico 3D: Perdas por Corrente × Espessura")
@@ -991,6 +1147,7 @@ def show_exercise_01_page():
                 },
             )
             st.plotly_chart(fig_3d, use_container_width=True)
+            figures_3d.append(("Perdas por corrente x espessura", fig_3d))
             st.caption(f"Grade de cálculo: {len(current_3d)} × {len(thickness_3d)} pontos")
 
             st.markdown("#### Gráfico 3D: Perdas por Corrente × Frequência")
@@ -1066,6 +1223,7 @@ def show_exercise_01_page():
                 },
             )
             st.plotly_chart(fig_3d_freq, use_container_width=True)
+            figures_3d.append(("Perdas por corrente x frequencia", fig_3d_freq))
             st.caption(f"Grade de cálculo: {len(current_3d_freq)} × {len(frequency_3d)} pontos")
 
             st.markdown("#### Gráfico 3D: Perdas por Espessura × Frequência")
@@ -1142,36 +1300,10 @@ def show_exercise_01_page():
                 },
             )
             st.plotly_chart(fig_3d_thick_freq, use_container_width=True)
+            figures_3d.append(("Perdas por espessura x frequencia", fig_3d_thick_freq))
             st.caption(
                 f"Grade de cálculo: {len(thickness_3d_freq)} × {len(frequency_3d_thick)} pontos"
             )
-
-    st.divider()
-
-    payload = _build_result_payload(calc_input, result)
-    json_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-    csv_bytes = _summary_csv_bytes(payload)
-
-    st.divider()
-    st.markdown("#### Exportação")
-    export_col_json, export_col_csv = st.columns(2)
-    with export_col_json:
-        st.download_button(
-            "Baixar resumo JSON",
-            data=json_bytes,
-            file_name="exercise01_result_summary.json",
-            mime="application/json",
-            use_container_width=True,
-        )
-    with export_col_csv:
-        st.download_button(
-            "Baixar resumo CSV",
-            data=csv_bytes,
-            file_name="exercise01_result_summary.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-
 
 if __name__ == "__main__":
     main()
