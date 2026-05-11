@@ -122,6 +122,7 @@ def calculate_loss_analytical(
     mu: float,
     sigma: float,
     num_conductors: int = 3,
+    ln_ba: float = 4.347,
 ) -> float:
     """Calcula perda total de potencia pela formula analitica cilindrica.
 
@@ -148,6 +149,7 @@ def calculate_loss_analytical(
         mu: Permeabilidade magnetica [H/m]
         sigma: Condutividade eletrica [S/m]
         num_conductors: Numero de condutores (padrao 3)
+        ln_ba: Parametro logaritmico da geometria ln(b/a)
 
     Returns:
         Perda total de potencia [W]
@@ -160,12 +162,6 @@ def calculate_loss_analytical(
     # O raio interno a corresponde a profundidade pelicular
     delta = 1.0 / q if q > 0 else 1e-6
     a = max(delta, 1e-6)
-
-    # Parametro ln(b/a) da formula do slide 18
-    # Para esta geometria de tanque (590x270x5 mm, 3 condutores), vale aproximadamente 4.347
-    # Esse parametro absorve a complexidade da distribuicao de campo dos 3 condutores
-    # Derivado de analise eletromagnetica (nao e fator de ajuste empirico)
-    ln_ba_parameter = 4.347
 
     # Argumento q*c (espessura normalizada)
     qc = q * thickness_m
@@ -185,7 +181,7 @@ def calculate_loss_analytical(
         denominator = 1e-12
 
     # Formula de perda total
-    # O termo ln(b/a) ja incorpora o efeito conjunto dos 3 condutores
-    total_loss = (im**2 * q / np.pi / sigma) * ln_ba_parameter * (numerator / denominator)
+    # O termo ln(b/a) incorpora o efeito geometrico do problema avaliado.
+    total_loss = (im**2 * q / np.pi / sigma) * ln_ba * (numerator / denominator)
 
     return float(total_loss)

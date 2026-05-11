@@ -35,7 +35,9 @@ from app.schemas import (
     get_default_exercise01_input,
     get_material_presets,
 )
-from app.core.exercises.q01_tank_losses import simulate_exercise_01
+from app.core.exercises.q01_tank_losses import simulate_exercise_01, simulate_exercise_03_biot_only
+from app.core.exercises.q02_analytical_solutions import solve_question_02
+from app.core.electromagnetics.biot_savart import calculate_loss_analytical
 from app.core.geometry.validation import GeometricValidator
 from app.core.geometry.plate import create_plate_from_input
 from app.components.geometry_plot import plot_geometry
@@ -435,6 +437,355 @@ def _show_exercise_01_intro_sections() -> None:
                     st.warning(f"Slide não encontrado: {img_path}")
 
 
+def _show_placeholder_question_card(question: str, description: str) -> None:
+    """Exibe um card de placeholder para questoes ainda nao implementadas."""
+    st.markdown(f"### {question}")
+    st.info("Esta questão ainda está em construção nesta versão inicial da Avaliação 1.")
+    st.write(description)
+
+
+def _show_assessment_q1_tab() -> None:
+    """Questao 1 da avaliacao: perdas na tampa circular."""
+    st.markdown("### Questão 1: Perdas por correntes induzidas na tampa circular")
+    st.caption(
+        "Dados do enunciado: f=60 Hz, D=910 mm, d=165 mm, c=9.52 mm, Im=1000 Arms. "
+        "O cálculo desta primeira versão usa o método analítico já validado no projeto."
+    )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        frequency_hz = st.number_input("Frequência [Hz]", min_value=0.1, value=60.0, key="av1_q1_f")
+        outer_d_mm = st.number_input(
+            "Diâmetro externo D [mm]", min_value=1.0, value=910.0, key="av1_q1_d_ext"
+        )
+        inner_d_mm = st.number_input(
+            "Diâmetro interno d [mm]", min_value=1.0, value=165.0, key="av1_q1_d_int"
+        )
+    with col_b:
+        thickness_mm = st.number_input(
+            "Espessura c [mm]", min_value=0.01, value=9.52, key="av1_q1_thickness"
+        )
+        im_a = st.number_input("Corrente Im [Arms]", min_value=0.0, value=1000.0, key="av1_q1_im")
+
+    if inner_d_mm >= outer_d_mm:
+        st.error("O diâmetro interno deve ser menor que o diâmetro externo.")
+        return
+
+    mu0 = 4.0 * np.pi * 1e-7
+    ln_ba = float(np.log(outer_d_mm / inner_d_mm))
+
+    materials = [
+        {"label": "Aço carbono", "sigma": 4.0e6, "mu_r": 200.0},
+        {"label": "Aço inox", "sigma": 1.33e6, "mu_r": 1.0},
+    ]
+
+    rows = []
+    for material in materials:
+        mu = mu0 * material["mu_r"]
+        p_analytical = calculate_loss_analytical(
+            im=float(im_a),
+            thickness_m=float(thickness_mm) * 1e-3,
+            frequency_hz=float(frequency_hz),
+            mu=float(mu),
+            sigma=float(material["sigma"]),
+            num_conductors=1,
+            ln_ba=ln_ba,
+        )
+        rows.append(
+            {
+                "Material": material["label"],
+                "mu_r": material["mu_r"],
+                "sigma [S/m]": material["sigma"],
+                "ln(D/d)": round(ln_ba, 6),
+                "Perda analítica [W]": round(float(p_analytical), 4),
+            }
+        )
+
+    st.markdown("#### Resultado da Questão 1 (método analítico)")
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+def _show_assessment_q2_tab() -> None:
+    """Questao 2 da avaliacao: deducoes analiticas da equacao de difusao e perdas."""
+    st.markdown("### Questão 2: Equação de difusão, campo H_φ e correntes induzidas")
+    st.caption(
+        "Enunciado: (a) Deduzir a equação de difusão e H_φ; "
+        "(b) Deduzir a densidade de corrente J_r; "
+        "(c) Deduzir e calcular as perdas totais."
+    )
+    st.info("Esta Questão resolve a equação de difusão em coordenadas cilíndricas para a tampa circular.")
+
+    # Dados padrão da questão (tampa circular da Q1)
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### Geometria da tampa circular")
+        outer_d_mm = st.number_input(
+            "Diâmetro externo D [mm]", min_value=1.0, value=910.0, key="av1_q2_d_ext"
+        )
+        inner_d_mm = st.number_input(
+            "Diâmetro interno d [mm]", min_value=1.0, value=165.0, key="av1_q2_d_int"
+        )
+        thickness_mm = st.number_input(
+            "Espessura c [mm]", min_value=0.01, value=9.52, key="av1_q2_thickness"
+        )
+    
+    with col2:
+        st.markdown("#### Parâmetros de operação")
+        frequency_hz = st.number_input(
+            "Frequência [Hz]", min_value=0.1, value=60.0, key="av1_q2_f"
+        )
+        current_a = st.number_input(
+            "Corrente [A]", min_value=0.0, value=1000.0, key="av1_q2_im"
+        )
+
+    # Material
+    col_mat1, col_mat2 = st.columns(2)
+    with col_mat1:
+        st.markdown("#### Material")
+        material_option = st.radio(
+            "Selecionar material",
+            ["Aço carbono", "Aço inox"],
+            key="av1_q2_material",
+        )
+        if material_option == "Aço carbono":
+            permeability_rel = 200.0
+            conductivity_s_per_m = 4.0e6
+            material_desc = "Aço carbono: μ_r=200, σ=4.0e6 S/m"
+        else:
+            permeability_rel = 1.0
+            conductivity_s_per_m = 1.33e6
+            material_desc = "Aço inox: μ_r=1, σ=1.33e6 S/m"
+        
+        st.caption(material_desc)
+    
+    with col_mat2:
+        st.write("")  # Espaçador
+
+    # Botão para calcular
+    if st.button("Calcular Questão 2 (Método Analítico)", type="primary", key="av1_q2_calc"):
+        try:
+            # Validações
+            if inner_d_mm >= outer_d_mm:
+                st.error("O diâmetro interno deve ser menor que o externo.")
+                return
+
+            # Resolver Q2
+            q2_result = solve_question_02(
+                outer_diameter_mm=outer_d_mm,
+                inner_diameter_mm=inner_d_mm,
+                thickness_mm=thickness_mm,
+                current_a_rms=float(current_a),
+                frequency_hz=float(frequency_hz),
+                permeability_rel=float(permeability_rel),
+                conductivity_s_per_m=float(conductivity_s_per_m),
+            )
+
+            # Exibir resultados em abas
+            st.divider()
+            tab_a, tab_b, tab_c, tab_graphs = st.tabs(
+                ["Parte (a): Equação de Difusão", "Parte (b): Densidade de Corrente", 
+                 "Parte (c): Perdas Totais", "Visualizações"]
+            )
+
+            with tab_a:
+                st.markdown("#### Parte (a): Equação de Difusão e Campo H_φ")
+                st.latex(
+                    r"\text{Equação de Difusão em coords. cilíndricas:} \quad "
+                    r"\nabla^2 H_\varphi - \frac{\omega\mu\sigma}{2}(1-j) H_\varphi = 0"
+                )
+                st.latex(
+                    r"H_\varphi(r) = H_0 \exp\left(-\frac{1+j}{2}\frac{\omega\mu\sigma}{2}(b-r)\right)"
+                )
+
+                col_a1, col_a2, col_a3 = st.columns(3)
+                with col_a1:
+                    st.metric("Profundidade de penetração δ", f"{q2_result.skin_depth_m*1e3:.4f}", "mm")
+                with col_a2:
+                    st.metric("Frequência angular ω", f"{q2_result.omega_rad_s:.2f}", "rad/s")
+                with col_a3:
+                    st.metric("H_φ na superfície (r=b)", f"{q2_result.h_field_at_outer_radius_a_per_m:.2f}", "A/m")
+
+                st.markdown("**Constante de propagação complexa:**")
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    st.text(f"p = (1+j)/δ")
+                    st.text(f"Re(p) = {q2_result.propagation_constant_real:.2e} m⁻¹")
+                with col_p2:
+                    st.text(f"Im(p) = {q2_result.propagation_constant_imag:.2e} m⁻¹")
+
+            with tab_b:
+                st.markdown("#### Parte (b): Densidade de Corrente Induzida J_r")
+                st.latex(
+                    r"\text{Lei de Faraday:} \quad \oint \mathbf{E} \cdot d\mathbf{l} = -\frac{d\Phi_B}{dt}"
+                )
+                st.latex(
+                    r"J_r = \sigma E_r \quad \text{(Lei de Ohm)}"
+                )
+                st.latex(
+                    r"|J_r(r)| \approx \sigma \omega \mu_0 |H_\varphi(r)|"
+                )
+
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
+                    st.metric("Máxima densidade de corrente", f"{q2_result.max_current_density_a_per_m2:.2e}", "A/m²")
+                with col_b2:
+                    st.metric("Densidade média", f"{q2_result.avg_current_density_a_per_m2:.2e}", "A/m²")
+
+            with tab_c:
+                st.markdown("#### Parte (c): Perdas Totais por Correntes Induzidas")
+                st.latex(
+                    r"P = \iiint \frac{J^2}{\sigma} dV = \int_0^{2\pi} \int_0^c \int_a^b "
+                    r"\frac{J_r^2(r)}{\sigma} r \, dr \, dz \, d\varphi"
+                )
+                st.latex(
+                    r"P = 2\pi c \int_a^b \frac{J_r^2(r)}{\sigma} r \, dr"
+                )
+
+                col_c1, col_c2, col_c3 = st.columns(3)
+                with col_c1:
+                    st.metric("Perdas totais", f"{q2_result.total_losses_w:.2f}", "W")
+                with col_c2:
+                    st.metric("Perdas por área", f"{q2_result.losses_per_unit_area_w_per_mm2:.4e}", "W/mm²")
+                with col_c3:
+                    st.metric("Perdas por volume", f"{q2_result.losses_per_unit_volume_w_per_mm3:.4e}", "W/mm³")
+
+                st.markdown("**Notas:**")
+                for note in q2_result.notes:
+                    st.caption(f"• {note}")
+
+            with tab_graphs:
+                st.markdown("#### Visualizações dos campos e perdas")
+                
+                # Plotar perfil do campo H_φ e densidade de corrente
+                from app.core.electromagnetics.diffusion_equation import (
+                    magnetic_field_circular_plate,
+                    induced_current_density_circular_plate,
+                )
+                
+                outer_radius_m = outer_d_mm / 2.0 * 1e-3
+                inner_radius_m = inner_d_mm / 2.0 * 1e-3
+                mu0 = 4.0 * np.pi * 1e-7
+                mu = permeability_rel * mu0
+                
+                n_points = 150
+                r_values = np.linspace(inner_radius_m, outer_radius_m, n_points)
+                
+                _, h_mag, _ = magnetic_field_circular_plate(
+                    r_values, outer_radius_m, inner_radius_m, current_a, frequency_hz, mu, conductivity_s_per_m
+                )
+                j_mag = induced_current_density_circular_plate(r_values, h_mag, frequency_hz, conductivity_s_per_m)
+                
+                # Converter para mm
+                r_mm = r_values * 1e3
+                
+                # Gráfico de H_φ e J_r
+                fig = make_subplots(
+                    rows=1, cols=2,
+                    subplot_titles=("Campo Magnético H_φ(r)", "Densidade de Corrente |J_r(r)|"),
+                    x_title="Raio [mm]",
+                )
+                
+                fig.add_trace(
+                    go.Scatter(x=r_mm, y=h_mag, name="H_φ", line={"color": "blue", "width": 3}),
+                    row=1, col=1
+                )
+                fig.add_trace(
+                    go.Scatter(x=r_mm, y=j_mag, name="J_r", line={"color": "red", "width": 3}),
+                    row=1, col=2
+                )
+                
+                fig.update_yaxes(title_text="H [A/m]", row=1, col=1)
+                fig.update_yaxes(title_text="J [A/m²]", row=1, col=2)
+                fig.update_layout(height=400, hovermode="x unified")
+                
+                st.plotly_chart(fig, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Erro no cálculo: {str(e)}")
+
+
+def _show_assessment_q3_tab() -> None:
+    """Questao 3 da avaliacao: calculo usando apenas Biot-Savart."""
+    st.markdown("### Questão 3: Campo magnético H(x,y) e perdas na tampa com 3 furos")
+    st.caption(
+        "Enunciado: calcular perdas para 2000 A, 2250 A, 2500 A e 2800 A em 60 Hz, "
+        "com aço carbono (sigma=2e7 S/m, mu_r=500)."
+    )
+    st.info("Nesta Questão 3, o único método aplicado é Biot-Savart.")
+
+    base_input = get_default_exercise01_input()
+    mu0 = 4.0 * np.pi * 1e-7
+    q3_material = MaterialInput(mu=mu0 * 500.0, sigma=2.0e7)
+    current_cases = [2000.0, 2250.0, 2500.0, 2800.0]
+
+    if st.button("Apresentar tabela da Q3", key="av1_q3_run_table", type="primary"):
+        q3_rows = []
+        for current in current_cases:
+            case_input = base_input.model_copy(
+                update={
+                    "frequency_hz": 60.0,
+                    "material": q3_material,
+                    "conductors": _apply_im_to_conductors(base_input.conductors, float(current)),
+                    "mesh": MeshInput(nx=200, ny=200),
+                }
+            )
+            case_result = simulate_exercise_03_biot_only(case_input)
+            q3_rows.append(
+                {
+                    "Corrente por condutor [A]": int(current),
+                    "Perda Biot-Savart [W]": round(case_result["total_loss_biot_w"], 4),
+                    "Perda Biot-Savart (slide19 estrito) [W]": round(
+                        case_result["total_loss_biot_slide19_strict_w"], 4
+                    ),
+                    "H máximo [A/m]": round(case_result["max_h_field"], 4),
+                }
+            )
+
+        st.markdown("#### Tabela de resultados da Questão 3")
+        st.dataframe(q3_rows, use_container_width=True, hide_index=True)
+
+    st.divider()
+    show_exercise_01_page(biot_only=True)
+
+
+def show_assessment_01_page() -> None:
+    """Pagina agregadora da Avaliacao 1 com estrutura por questao."""
+    st.markdown("## Avaliação 1")
+    st.write(
+        "Esta página organiza a avaliação por questão. Nesta primeira versão, "
+        "as Questões 1 e 3 estão alinhadas aos métodos já implementados, com espaço "
+        "preparado para evolução das demais questões."
+    )
+
+    tab_q1, tab_q2, tab_q3, tab_q4, tab_q5 = st.tabs(
+        ["Questão 1", "Questão 2", "Questão 3", "Questão 4", "Questão 5"]
+    )
+
+    with tab_q1:
+        _show_assessment_q1_tab()
+
+    with tab_q2:
+        _show_assessment_q2_tab()
+
+    with tab_q3:
+        _show_assessment_q3_tab()
+
+    with tab_q4:
+        _show_placeholder_question_card(
+            "Questão 4: condutores retangulares de cobre",
+            "Próximo passo: implementar equações de campo, densidade de corrente e perdas por área, "
+            "com cálculo de densidade superficial em W/m².",
+        )
+
+    with tab_q5:
+        _show_placeholder_question_card(
+            "Questão 5: comparação de métodos para resistência AC e indutância de fuga",
+            "Próximo passo: incorporar modelos para condutores circulares, retangulares e tipo folha "
+            "a partir do artigo de referência.",
+        )
+
+
 def main():
     """Funcao principal da aplicacao."""
     # Navegacao lateral
@@ -444,14 +795,14 @@ def main():
 
     page = st.sidebar.radio(
         "Navegação",
-        options=["Início", "Questão 1: Perdas no Tanque"],
+        options=["Início", "Avaliação 1"],
         index=0,
     )
 
     if page == "Início":
         show_home_page()
-    elif page == "Questão 1: Perdas no Tanque":
-        show_exercise_01_page()
+    elif page == "Avaliação 1":
+        show_assessment_01_page()
 
 
 def show_home_page():
@@ -489,13 +840,15 @@ def show_home_page():
         st.markdown("### Exercícios disponíveis")
         st.write(
             """
-            **Questão 1 — Perdas no tanque**
+            **Avaliação 1**
 
-            Calcule perdas magnéticas em uma placa com condutores carregados.
-            Edite geometria, propriedades do material e frequência de operação
-            para explorar o comportamento do campo magnético.
+            Estrutura principal para resolver as questões da avaliação.
+            Nesta primeira versão:
+            - Questão 1 com cálculo analítico da tampa circular
+            - Questão 3 com simulador exclusivo Biot-Savart
+            - Espaços reservados para Questões 2, 4 e 5
 
-            *Status: MVP funcional*
+            *Status: versão inicial de alinhamento*
             """
         )
 
@@ -533,9 +886,11 @@ def show_home_page():
         )
 
 
-def show_exercise_01_page():
+def show_exercise_01_page(biot_only: bool = False):
     """Exibe a pagina da Questao 01 (perdas no tanque)."""
-    st.markdown("## Questão 1: Perdas no tanque devido aos condutores carregados")
+    st.markdown("## Questão 3: Tampa com 3 furos e condutores")
+    if biot_only:
+        st.caption("Modo da Q3: exibição exclusiva do método Biot-Savart.")
 
     st.divider()
     _show_exercise_01_intro_sections()
@@ -818,34 +1173,49 @@ def show_exercise_01_page():
     st.divider()
     st.markdown("### Resultados da simulação")
 
-    st.markdown("#### Comparação de métodos")
-    col_analytical, col_approximate, col_diff = st.columns(3)
+    if biot_only:
+        st.markdown("#### Resultado (Biot-Savart)")
+        col_biot, col_h, col_loss = st.columns(3)
+        with col_biot:
+            st.metric(
+                "**Perda (Biot-Savart)**",
+                f"{result.total_loss_approximate_w:.2f}",
+                "W",
+                help="Método Biot-Savart com integração numérica",
+            )
+        with col_h:
+            st.metric("**H máximo**", f"{result.max_h_field:.2f}", "A/m")
+        with col_loss:
+            st.metric("**Densidade máxima de perdas**", f"{result.max_loss_density:.2f}", "W/m²")
+    else:
+        st.markdown("#### Comparação de métodos")
+        col_analytical, col_approximate, col_diff = st.columns(3)
 
-    with col_analytical:
-        st.metric(
-            "**Perda (Analítico)**",
-            f"{result.total_loss_analytical_w:.2f}",
-            "W",
-            help="Fórmula analítica exata para geometria cilíndrica",
-        )
+        with col_analytical:
+            st.metric(
+                "**Perda (Analítico)**",
+                f"{result.total_loss_analytical_w:.2f}",
+                "W",
+                help="Fórmula analítica exata para geometria cilíndrica",
+            )
 
-    with col_approximate:
-        st.metric(
-            "**Perda (Aproximado)**",
-            f"{result.total_loss_approximate_w:.2f}",
-            "W",
-            help="Método Biot-Savart com integração numérica",
-        )
+        with col_approximate:
+            st.metric(
+                "**Perda (Aproximado)**",
+                f"{result.total_loss_approximate_w:.2f}",
+                "W",
+                help="Método Biot-Savart com integração numérica",
+            )
 
-    with col_diff:
-        diff_pct = (
-            abs(result.total_loss_analytical_w - result.total_loss_approximate_w)
-            / result.total_loss_analytical_w
-            * 100
-            if result.total_loss_analytical_w > 0
-            else 0
-        )
-        st.metric("**Diferença**", f"{diff_pct:.1f}%", help="Desvio relativo entre métodos")
+        with col_diff:
+            diff_pct = (
+                abs(result.total_loss_analytical_w - result.total_loss_approximate_w)
+                / result.total_loss_analytical_w
+                * 100
+                if result.total_loss_analytical_w > 0
+                else 0
+            )
+            st.metric("**Diferença**", f"{diff_pct:.1f}%", help="Desvio relativo entre métodos")
 
     analytical_details = _build_analytical_details(calc_input)
     biot_details = _build_biot_details(calc_input)
@@ -853,22 +1223,23 @@ def show_exercise_01_page():
     st.divider()
     st.markdown("#### Equações utilizadas e detalhes de cálculo")
 
-    with st.expander("Método analítico", expanded=False):
-        st.latex(
-            r"P = \left(\frac{I_m^2 q}{\pi \sigma}\right) \ln\left(\frac{b}{a}\right) "
-            r"\left[\frac{\sinh(qc)-\sin(qc)}{\cosh(qc)+\cos(qc)}\right]"
-        )
+    if not biot_only:
+        with st.expander("Método analítico", expanded=False):
+            st.latex(
+                r"P = \left(\frac{I_m^2 q}{\pi \sigma}\right) \ln\left(\frac{b}{a}\right) "
+                r"\left[\frac{\sinh(qc)-\sin(qc)}{\cosh(qc)+\cos(qc)}\right]"
+            )
  
-        col_a1, col_a2 = st.columns(2)
-        with col_a1:
-            st.write(f"Im = {analytical_details['im_rms_a']:.2f} A")
-            st.write(f"f = {calc_input.frequency_hz:.2f} Hz")
-            st.write(f"ω = 2πf = {analytical_details['omega_rad_s']:.4f} rad/s")
-            st.write(f"μ = {calc_input.material.mu:.6e} H/m")
-            st.write(f"σ = {calc_input.material.sigma:.6e} S/m")
-            st.write(f"c = {analytical_details['thickness_m']*1000:.3f} mm")
+            col_a1, col_a2 = st.columns(2)
+            with col_a1:
+                st.write(f"Im = {analytical_details['im_rms_a']:.2f} A")
+                st.write(f"f = {calc_input.frequency_hz:.2f} Hz")
+                st.write(f"ω = 2πf = {analytical_details['omega_rad_s']:.4f} rad/s")
+                st.write(f"μ = {calc_input.material.mu:.6e} H/m")
+                st.write(f"σ = {calc_input.material.sigma:.6e} S/m")
+                st.write(f"c = {analytical_details['thickness_m']*1000:.3f} mm")
 
-        st.write(f"Resultado analítico = {result.total_loss_analytical_w:.2f} W")
+            st.write(f"Resultado analítico = {result.total_loss_analytical_w:.2f} W")
 
     with st.expander("Método aproximado (Biot-Savart)", expanded=False):
         st.latex(
@@ -907,7 +1278,7 @@ def show_exercise_01_page():
                 # Preserva o padrao de sinais de corrente do ultimo estado calculado
                 base_conductors = calc_input.conductors
 
-                end_current_a = reference_current_a * 1.1
+                end_current_a = 3000.0
                 end_current_int = int(np.floor(end_current_a))
                 sweep_currents = np.arange(0, end_current_int + 1, 1, dtype=float)
                 sweep_currents = _limit_sweep_points(sweep_currents)
@@ -925,15 +1296,16 @@ def show_exercise_01_page():
                     approximate_losses.append(sweep_result.total_loss_approximate_w)
 
                 fig_losses = go.Figure()
-                fig_losses.add_trace(
-                    go.Scatter(
-                        x=sweep_currents,
-                        y=analytical_losses,
-                        mode="lines",
-                        name="Analítico",
-                        line={"width": 3},
+                if not biot_only:
+                    fig_losses.add_trace(
+                        go.Scatter(
+                            x=sweep_currents,
+                            y=analytical_losses,
+                            mode="lines",
+                            name="Analítico",
+                            line={"width": 3},
+                        )
                     )
-                )
                 fig_losses.add_trace(
                     go.Scatter(
                         x=sweep_currents,
@@ -979,15 +1351,16 @@ def show_exercise_01_page():
                 approximate_losses_thickness.append(sweep_result.total_loss_approximate_w)
 
             fig_thickness = go.Figure()
-            fig_thickness.add_trace(
-                go.Scatter(
-                    x=sweep_thickness_mm,
-                    y=analytical_losses_thickness,
-                    mode="lines",
-                    name="Analítico",
-                    line={"width": 3},
+            if not biot_only:
+                fig_thickness.add_trace(
+                    go.Scatter(
+                        x=sweep_thickness_mm,
+                        y=analytical_losses_thickness,
+                        mode="lines",
+                        name="Analítico",
+                        line={"width": 3},
+                    )
                 )
-            )
             fig_thickness.add_trace(
                 go.Scatter(
                     x=sweep_thickness_mm,
@@ -1025,15 +1398,16 @@ def show_exercise_01_page():
                 approximate_losses_frequency.append(sweep_result.total_loss_approximate_w)
 
             fig_frequency = go.Figure()
-            fig_frequency.add_trace(
-                go.Scatter(
-                    x=sweep_frequency_hz,
-                    y=analytical_losses_frequency,
-                    mode="lines",
-                    name="Analítico",
-                    line={"width": 3},
+            if not biot_only:
+                fig_frequency.add_trace(
+                    go.Scatter(
+                        x=sweep_frequency_hz,
+                        y=analytical_losses_frequency,
+                        mode="lines",
+                        name="Analítico",
+                        line={"width": 3},
+                    )
                 )
-            )
             fig_frequency.add_trace(
                 go.Scatter(
                     x=sweep_frequency_hz,
@@ -1074,7 +1448,7 @@ def show_exercise_01_page():
             st.markdown("#### Gráfico 3D: Perdas por Corrente × Espessura")
             st.caption(f"Frequência fixa em {calc_input.frequency_hz:.1f} Hz")
 
-            max_current = reference_current_a * 1.1
+            max_current = 3000.0
             max_thickness = float(calc_input.plate.thickness_mm * 1.1)
             current_3d = np.linspace(0, max_current, 5)
             thickness_3d = np.linspace(0.1, max_thickness, 5)
@@ -1095,57 +1469,80 @@ def show_exercise_01_page():
                     analytical_surface[i, j] = surf_result.total_loss_analytical_w
                     approximate_surface[i, j] = surf_result.total_loss_approximate_w
 
-            fig_3d = make_subplots(
-                rows=1,
-                cols=2,
-                specs=[[{"type": "surface"}, {"type": "surface"}]],
-                subplot_titles=("Analítico", "Biot-Savart"),
-                horizontal_spacing=0.1,
-            )
-            fig_3d.add_trace(
-                go.Surface(
-                    x=current_3d,
-                    y=thickness_3d,
-                    z=analytical_surface,
-                    colorscale="Viridis",
-                    name="Analítico",
-                    showscale=True,
-                    colorbar={"x": 0.45, "len": 0.7},
-                ),
-                row=1,
-                col=1,
-            )
-            fig_3d.add_trace(
-                go.Surface(
-                    x=current_3d,
-                    y=thickness_3d,
-                    z=approximate_surface,
-                    colorscale="Viridis",
-                    name="Biot-Savart",
-                    showscale=True,
-                    colorbar={"x": 1.02, "len": 0.7},
-                ),
-                row=1,
-                col=2,
-            )
-            fig_3d.update_xaxes(title_text="Corrente [A]", row=1, col=1)
-            fig_3d.update_xaxes(title_text="Corrente [A]", row=1, col=2)
-            fig_3d.update_yaxes(title_text="Espessura [mm]", row=1, col=1)
-            fig_3d.update_yaxes(title_text="Espessura [mm]", row=1, col=2)
-            fig_3d.update_layout(
-                height=600,
-                margin={"l": 0, "r": 0, "t": 40, "b": 0},
-                scene={
-                    "xaxis_title": "Corrente [A]",
-                    "yaxis_title": "Espessura [mm]",
-                    "zaxis_title": "Perdas [W]",
-                },
-                scene2={
-                    "xaxis_title": "Corrente [A]",
-                    "yaxis_title": "Espessura [mm]",
-                    "zaxis_title": "Perdas [W]",
-                },
-            )
+            if biot_only:
+                fig_3d = go.Figure(
+                    data=[
+                        go.Surface(
+                            x=current_3d,
+                            y=thickness_3d,
+                            z=approximate_surface,
+                            colorscale="Viridis",
+                            name="Biot-Savart",
+                            showscale=True,
+                        )
+                    ]
+                )
+                fig_3d.update_layout(
+                    height=600,
+                    margin={"l": 0, "r": 0, "t": 40, "b": 0},
+                    scene={
+                        "xaxis_title": "Corrente [A]",
+                        "yaxis_title": "Espessura [mm]",
+                        "zaxis_title": "Perdas [W]",
+                    },
+                )
+            else:
+                fig_3d = make_subplots(
+                    rows=1,
+                    cols=2,
+                    specs=[[{"type": "surface"}, {"type": "surface"}]],
+                    subplot_titles=("Analítico", "Biot-Savart"),
+                    horizontal_spacing=0.1,
+                )
+                fig_3d.add_trace(
+                    go.Surface(
+                        x=current_3d,
+                        y=thickness_3d,
+                        z=analytical_surface,
+                        colorscale="Viridis",
+                        name="Analítico",
+                        showscale=True,
+                        colorbar={"x": 0.45, "len": 0.7},
+                    ),
+                    row=1,
+                    col=1,
+                )
+                fig_3d.add_trace(
+                    go.Surface(
+                        x=current_3d,
+                        y=thickness_3d,
+                        z=approximate_surface,
+                        colorscale="Viridis",
+                        name="Biot-Savart",
+                        showscale=True,
+                        colorbar={"x": 1.02, "len": 0.7},
+                    ),
+                    row=1,
+                    col=2,
+                )
+                fig_3d.update_xaxes(title_text="Corrente [A]", row=1, col=1)
+                fig_3d.update_xaxes(title_text="Corrente [A]", row=1, col=2)
+                fig_3d.update_yaxes(title_text="Espessura [mm]", row=1, col=1)
+                fig_3d.update_yaxes(title_text="Espessura [mm]", row=1, col=2)
+                fig_3d.update_layout(
+                    height=600,
+                    margin={"l": 0, "r": 0, "t": 40, "b": 0},
+                    scene={
+                        "xaxis_title": "Corrente [A]",
+                        "yaxis_title": "Espessura [mm]",
+                        "zaxis_title": "Perdas [W]",
+                    },
+                    scene2={
+                        "xaxis_title": "Corrente [A]",
+                        "yaxis_title": "Espessura [mm]",
+                        "zaxis_title": "Perdas [W]",
+                    },
+                )
             st.plotly_chart(fig_3d, use_container_width=True)
             figures_3d.append(("Perdas por corrente x espessura", fig_3d))
             st.caption(f"Grade de cálculo: {len(current_3d)} × {len(thickness_3d)} pontos")
@@ -1171,57 +1568,80 @@ def show_exercise_01_page():
                     analytical_surface_freq[i, j] = surf_result.total_loss_analytical_w
                     approximate_surface_freq[i, j] = surf_result.total_loss_approximate_w
 
-            fig_3d_freq = make_subplots(
-                rows=1,
-                cols=2,
-                specs=[[{"type": "surface"}, {"type": "surface"}]],
-                subplot_titles=("Analítico", "Biot-Savart"),
-                horizontal_spacing=0.1,
-            )
-            fig_3d_freq.add_trace(
-                go.Surface(
-                    x=current_3d_freq,
-                    y=frequency_3d,
-                    z=analytical_surface_freq,
-                    colorscale="Viridis",
-                    name="Analítico",
-                    showscale=True,
-                    colorbar={"x": 0.45, "len": 0.7},
-                ),
-                row=1,
-                col=1,
-            )
-            fig_3d_freq.add_trace(
-                go.Surface(
-                    x=current_3d_freq,
-                    y=frequency_3d,
-                    z=approximate_surface_freq,
-                    colorscale="Viridis",
-                    name="Biot-Savart",
-                    showscale=True,
-                    colorbar={"x": 1.02, "len": 0.7},
-                ),
-                row=1,
-                col=2,
-            )
-            fig_3d_freq.update_xaxes(title_text="Corrente [A]", row=1, col=1)
-            fig_3d_freq.update_xaxes(title_text="Corrente [A]", row=1, col=2)
-            fig_3d_freq.update_yaxes(title_text="Frequência [Hz]", row=1, col=1)
-            fig_3d_freq.update_yaxes(title_text="Frequência [Hz]", row=1, col=2)
-            fig_3d_freq.update_layout(
-                height=600,
-                margin={"l": 0, "r": 0, "t": 40, "b": 0},
-                scene={
-                    "xaxis_title": "Corrente [A]",
-                    "yaxis_title": "Frequência [Hz]",
-                    "zaxis_title": "Perdas [W]",
-                },
-                scene2={
-                    "xaxis_title": "Corrente [A]",
-                    "yaxis_title": "Frequência [Hz]",
-                    "zaxis_title": "Perdas [W]",
-                },
-            )
+            if biot_only:
+                fig_3d_freq = go.Figure(
+                    data=[
+                        go.Surface(
+                            x=current_3d_freq,
+                            y=frequency_3d,
+                            z=approximate_surface_freq,
+                            colorscale="Viridis",
+                            name="Biot-Savart",
+                            showscale=True,
+                        )
+                    ]
+                )
+                fig_3d_freq.update_layout(
+                    height=600,
+                    margin={"l": 0, "r": 0, "t": 40, "b": 0},
+                    scene={
+                        "xaxis_title": "Corrente [A]",
+                        "yaxis_title": "Frequência [Hz]",
+                        "zaxis_title": "Perdas [W]",
+                    },
+                )
+            else:
+                fig_3d_freq = make_subplots(
+                    rows=1,
+                    cols=2,
+                    specs=[[{"type": "surface"}, {"type": "surface"}]],
+                    subplot_titles=("Analítico", "Biot-Savart"),
+                    horizontal_spacing=0.1,
+                )
+                fig_3d_freq.add_trace(
+                    go.Surface(
+                        x=current_3d_freq,
+                        y=frequency_3d,
+                        z=analytical_surface_freq,
+                        colorscale="Viridis",
+                        name="Analítico",
+                        showscale=True,
+                        colorbar={"x": 0.45, "len": 0.7},
+                    ),
+                    row=1,
+                    col=1,
+                )
+                fig_3d_freq.add_trace(
+                    go.Surface(
+                        x=current_3d_freq,
+                        y=frequency_3d,
+                        z=approximate_surface_freq,
+                        colorscale="Viridis",
+                        name="Biot-Savart",
+                        showscale=True,
+                        colorbar={"x": 1.02, "len": 0.7},
+                    ),
+                    row=1,
+                    col=2,
+                )
+                fig_3d_freq.update_xaxes(title_text="Corrente [A]", row=1, col=1)
+                fig_3d_freq.update_xaxes(title_text="Corrente [A]", row=1, col=2)
+                fig_3d_freq.update_yaxes(title_text="Frequência [Hz]", row=1, col=1)
+                fig_3d_freq.update_yaxes(title_text="Frequência [Hz]", row=1, col=2)
+                fig_3d_freq.update_layout(
+                    height=600,
+                    margin={"l": 0, "r": 0, "t": 40, "b": 0},
+                    scene={
+                        "xaxis_title": "Corrente [A]",
+                        "yaxis_title": "Frequência [Hz]",
+                        "zaxis_title": "Perdas [W]",
+                    },
+                    scene2={
+                        "xaxis_title": "Corrente [A]",
+                        "yaxis_title": "Frequência [Hz]",
+                        "zaxis_title": "Perdas [W]",
+                    },
+                )
             st.plotly_chart(fig_3d_freq, use_container_width=True)
             figures_3d.append(("Perdas por corrente x frequencia", fig_3d_freq))
             st.caption(f"Grade de cálculo: {len(current_3d_freq)} × {len(frequency_3d)} pontos")
@@ -1248,57 +1668,80 @@ def show_exercise_01_page():
                     analytical_surface_thick_freq[i, j] = surf_result.total_loss_analytical_w
                     approximate_surface_thick_freq[i, j] = surf_result.total_loss_approximate_w
 
-            fig_3d_thick_freq = make_subplots(
-                rows=1,
-                cols=2,
-                specs=[[{"type": "surface"}, {"type": "surface"}]],
-                subplot_titles=("Analítico", "Biot-Savart"),
-                horizontal_spacing=0.1,
-            )
-            fig_3d_thick_freq.add_trace(
-                go.Surface(
-                    x=thickness_3d_freq,
-                    y=frequency_3d_thick,
-                    z=analytical_surface_thick_freq,
-                    colorscale="Viridis",
-                    name="Analítico",
-                    showscale=True,
-                    colorbar={"x": 0.45, "len": 0.7},
-                ),
-                row=1,
-                col=1,
-            )
-            fig_3d_thick_freq.add_trace(
-                go.Surface(
-                    x=thickness_3d_freq,
-                    y=frequency_3d_thick,
-                    z=approximate_surface_thick_freq,
-                    colorscale="Viridis",
-                    name="Biot-Savart",
-                    showscale=True,
-                    colorbar={"x": 1.02, "len": 0.7},
-                ),
-                row=1,
-                col=2,
-            )
-            fig_3d_thick_freq.update_xaxes(title_text="Espessura [mm]", row=1, col=1)
-            fig_3d_thick_freq.update_xaxes(title_text="Espessura [mm]", row=1, col=2)
-            fig_3d_thick_freq.update_yaxes(title_text="Frequência [Hz]", row=1, col=1)
-            fig_3d_thick_freq.update_yaxes(title_text="Frequência [Hz]", row=1, col=2)
-            fig_3d_thick_freq.update_layout(
-                height=600,
-                margin={"l": 0, "r": 0, "t": 40, "b": 0},
-                scene={
-                    "xaxis_title": "Espessura [mm]",
-                    "yaxis_title": "Frequência [Hz]",
-                    "zaxis_title": "Perdas [W]",
-                },
-                scene2={
-                    "xaxis_title": "Espessura [mm]",
-                    "yaxis_title": "Frequência [Hz]",
-                    "zaxis_title": "Perdas [W]",
-                },
-            )
+            if biot_only:
+                fig_3d_thick_freq = go.Figure(
+                    data=[
+                        go.Surface(
+                            x=thickness_3d_freq,
+                            y=frequency_3d_thick,
+                            z=approximate_surface_thick_freq,
+                            colorscale="Viridis",
+                            name="Biot-Savart",
+                            showscale=True,
+                        )
+                    ]
+                )
+                fig_3d_thick_freq.update_layout(
+                    height=600,
+                    margin={"l": 0, "r": 0, "t": 40, "b": 0},
+                    scene={
+                        "xaxis_title": "Espessura [mm]",
+                        "yaxis_title": "Frequência [Hz]",
+                        "zaxis_title": "Perdas [W]",
+                    },
+                )
+            else:
+                fig_3d_thick_freq = make_subplots(
+                    rows=1,
+                    cols=2,
+                    specs=[[{"type": "surface"}, {"type": "surface"}]],
+                    subplot_titles=("Analítico", "Biot-Savart"),
+                    horizontal_spacing=0.1,
+                )
+                fig_3d_thick_freq.add_trace(
+                    go.Surface(
+                        x=thickness_3d_freq,
+                        y=frequency_3d_thick,
+                        z=analytical_surface_thick_freq,
+                        colorscale="Viridis",
+                        name="Analítico",
+                        showscale=True,
+                        colorbar={"x": 0.45, "len": 0.7},
+                    ),
+                    row=1,
+                    col=1,
+                )
+                fig_3d_thick_freq.add_trace(
+                    go.Surface(
+                        x=thickness_3d_freq,
+                        y=frequency_3d_thick,
+                        z=approximate_surface_thick_freq,
+                        colorscale="Viridis",
+                        name="Biot-Savart",
+                        showscale=True,
+                        colorbar={"x": 1.02, "len": 0.7},
+                    ),
+                    row=1,
+                    col=2,
+                )
+                fig_3d_thick_freq.update_xaxes(title_text="Espessura [mm]", row=1, col=1)
+                fig_3d_thick_freq.update_xaxes(title_text="Espessura [mm]", row=1, col=2)
+                fig_3d_thick_freq.update_yaxes(title_text="Frequência [Hz]", row=1, col=1)
+                fig_3d_thick_freq.update_yaxes(title_text="Frequência [Hz]", row=1, col=2)
+                fig_3d_thick_freq.update_layout(
+                    height=600,
+                    margin={"l": 0, "r": 0, "t": 40, "b": 0},
+                    scene={
+                        "xaxis_title": "Espessura [mm]",
+                        "yaxis_title": "Frequência [Hz]",
+                        "zaxis_title": "Perdas [W]",
+                    },
+                    scene2={
+                        "xaxis_title": "Espessura [mm]",
+                        "yaxis_title": "Frequência [Hz]",
+                        "zaxis_title": "Perdas [W]",
+                    },
+                )
             st.plotly_chart(fig_3d_thick_freq, use_container_width=True)
             figures_3d.append(("Perdas por espessura x frequencia", fig_3d_thick_freq))
             st.caption(

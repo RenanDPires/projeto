@@ -140,7 +140,7 @@ def analyze_geometric_parameters():
         term1 = np.sinh(qc) - np.sin(qc)
         term2 = np.cosh(qc) + np.cos(qc)
         
-        I = 2000.0
+        I = 2800.0
         P1 = (I**2 * q / (np.pi * default_input.material.sigma)) * np.log(b1/a1) * (term1 / term2)
         
         print(f"    Factor {factor:2.0f}: b = δ + H/f → b = {b1:.6e} m")

@@ -1,0 +1,69 @@
+
+--- PÁGINA 1 ---
+1 
+TRABALHO 1 – Perdas em Regiões Condutoras e em Condutores de 
+Transformadores de Potência 
+ 
+Disciplina: Tópicos Especiais em Eletrônica Potência e Acionamentos IV (EEL7216). 
+Professor: Mauricio Valencia Ferreira da Luz, Dr. 
+Aluno(s): _____________________________________________________________________ 
+ 
+Questão 1 ) Calcule as perdas por correntes induzidas na tampa circular , usada em 
+transformadores de potência, mostrada na Figura 1. Considere os seguintes dados: 𝑓 = 60 Hz, 
+𝑏 = 910 mm, 𝑎 = 165 mm, 𝑐 = 9,52 mm,  𝜇𝑜 = 4𝜋 ∙ 10−7 H/m, 𝐼 = 1000 Arms, e 
+a) Aço carbono: 𝜎 = 4 ∙ 106 S/m, e 𝜇 = 200 𝜇𝑜; 
+b) Aço inox: 𝜎 = 1,33 ∙ 106 S/m, e 𝜇 = 1 𝜇𝑜. 
+ 
+ 
+Figura 1 - Tampa circular usada em transformadores de potência. 
+ 
+Questão 2 ) a) Para a tampa mostrada na Fig ura 1, encontre a equação de difusão em 
+coordenadas cilíndricas e deduza a equação da componente 𝐻𝜑 do campo magnético; 
+b) deduza a equação da componente 𝐽𝑟 da densidade de corrente induzida na tampa circular; 
+c) deduza a equação das perdas totais por correntes induzidas na tampa circular. 
+OBS: estudar o item “ 15.5 Tank Losses Associated with the Bushings ”, página 456, do livro do 
+Del Vecchio. 
+ 
+Questão 3) Figura 2 mostra o corte transversal da tampa de um transformador de potência. Na 
+tampa há 3 furos por onde passam três condutores de corrente (fases A, B e C) (condutores não 
+desenhados). 
+a) Escreva um programa para calcular o campo magnético 𝐻𝑚(𝑥, 𝑦) na tampa; 
+b) Calcule as perdas totais por correntes induzidas para os seguintes valores de corrente elétrica: 
+2000 A, 2250 A, 2500 A e 2800 A.  Considere a frequência em 60 Hz e a tampa de aço carbono 
+com as seguintes propriedades: 𝜎 = 2 ∙ 107 S/m, 𝜇 = 500 𝜇𝑜, e  𝜇𝑜 = 4𝜋 ∙ 10−7 H/m. 
+ 
+ 
+Figura 2 - Corte transversal da tampa com os furos para passagem dos condutores das buchas 
+(todas as dimensões estão em milímetros). 
+
+--- PÁGINA 2 ---
+2 
+ 
+Questão 4) a) Deduza as equações de campo magnético, densidade de corrente e perdas/área 
+para os condutores  retangulares de cobre  (Figura 3)  de largura  2𝑏 com suas respectivas 
+condições de contorno. 
+ 
+ 
+                                   (a)                                              (b)                                                (c) 
+Figura 3 - Condutores com suas respectivas condições de contorno. 
+ 
+b) Calcule a densidade superficial de perdas (W/m2) para os seguintes dados: 
+𝐻𝑜 = 6,0 A/m, 𝜎 = 5,8 ∙ 107 S/m, 𝑏 = 2,5 cm, 𝑓 = 60 Hz, 𝜇 = 1 𝜇𝑜, e  𝜇𝑜 = 4𝜋 ∙ 10−7 H/m. 
+ 
+OBS: estudar o item “ 15.3.2.1 Eddy Current Losses in the Coils ”, página 426, do livro do Del 
+Vecchio e o item “4.5.1 Expression for the eddy loss”, página 150, do livro do Kurkani. 
+ 
+Questão 5) Estudar o artigo intitulado “comparison of analytical methods for calculating the AC 
+resistance and leakage inductance of medium -frequency transformers ” para implementar as 
+equações de perdas em condutores circulares, condutores retangulares e condutores do tipo 
+folha, os quais são us ados em transformadores de potência . A implementação poderá ser 
+realizada em Matlab, Python ou outra linguagem de programação. 
+ 
+ 
+ 
+ 
+ 
+“Toda reforma interior e toda mudança para melhor dependem 
+exclusivamente da aplicação do nosso próprio esforço” 
+Immanuel Kant 
+ 

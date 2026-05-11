@@ -129,6 +129,79 @@ def _calcular_perdas_analitico(
     )
 
 
+def simulate_exercise_03_biot_only(input_model: Exercise01Input) -> dict:
+    """Executa a simulação da Questão 03 usando somente Biot-Savart.
+
+    Retorna um dicionario serializavel com métricas de perdas e campo.
+    """
+    plate = create_plate_from_input(input_model.plate, input_model.holes)
+    mesh = create_uniform_mesh(
+        plate.width_m, plate.height_m, input_model.mesh.nx, input_model.mesh.ny
+    )
+
+    conductor_positions = np.array(
+        [[c.x_mm * 1e-3, c.y_mm * 1e-3] for c in input_model.conductors]
+    )
+    conductor_currents = np.array([c.current_a for c in input_model.conductors])
+
+    x, y = mesh.get_mesh_arrays()
+    dx, dy = mesh.get_dx_dy()
+
+    h_field, param_a_m, param_im_a = _calcular_campo_magnetico(
+        x, y, conductor_positions, conductor_currents, input_model.frequency_hz
+    )
+
+    valid_mask = plate.is_valid_point(x, y).astype(float)
+
+    total_loss_biot_w, total_loss_biot_slide19_strict_w = _calcular_perdas_biot_savart(
+        h_field,
+        valid_mask,
+        dx,
+        dy,
+        input_model,
+        plate.thickness_m,
+    )
+
+    loss_density = get_loss_density(
+        h_field,
+        input_model.frequency_hz,
+        input_model.material.mu,
+        input_model.material.sigma,
+    )
+
+    max_h_field = float(np.max(h_field[valid_mask > 0])) if np.any(valid_mask) else 0.0
+    max_loss_density = float(np.max(loss_density * valid_mask))
+    valid_area_m2 = plate.get_valid_area_m2()
+
+    notes = [
+        "Método único aplicado: Biot-Savart",
+        f"Resolucao da malha: {input_model.mesh.nx}x{input_model.mesh.ny} pontos",
+        f"Numero de furos: {len(input_model.holes)}",
+        f"Numero de condutores: {len(input_model.conductors)}",
+        f"Frequencia de operacao: {input_model.frequency_hz} Hz",
+        (
+            "Parametros slide 19: "
+            f"a={((param_a_m or 0.0) * 1000):.1f} mm, "
+            f"x={input_model.plate.width_mm:.1f} mm, "
+            f"y={input_model.plate.height_mm:.1f} mm, "
+            f"Im={param_im_a:.1f} A"
+        ),
+        (
+            "Resultado Biot-Savart com coeficiente estrito slide 19: "
+            f"{total_loss_biot_slide19_strict_w:.2f} W"
+        ),
+    ]
+
+    return {
+        "total_loss_biot_w": float(total_loss_biot_w),
+        "total_loss_biot_slide19_strict_w": float(total_loss_biot_slide19_strict_w),
+        "max_h_field": max_h_field,
+        "max_loss_density": max_loss_density,
+        "valid_area_m2": valid_area_m2,
+        "notes": notes,
+    }
+
+
 def simulate_exercise_01(input_model: Exercise01Input) -> Exercise01Result:
     """Executa a simulação completa da Questão 01."""
     # Conversão para SI e construção da geometria

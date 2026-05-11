@@ -37,9 +37,9 @@ def get_default_exercise01_input() -> Exercise01Input:
             HoleInput(x_mm=490.0, y_mm=135.0, diameter_mm=82.0),
         ],
         conductors=[
-            ConductorInput(x_mm=100.0, y_mm=135.0, current_a=2000.0),
-            ConductorInput(x_mm=295.0, y_mm=135.0, current_a=2000.0),
-            ConductorInput(x_mm=490.0, y_mm=135.0, current_a=2000.0),
+            ConductorInput(x_mm=100.0, y_mm=135.0, current_a=2800.0),
+            ConductorInput(x_mm=295.0, y_mm=135.0, current_a=2800.0),
+            ConductorInput(x_mm=490.0, y_mm=135.0, current_a=2800.0),
         ],
         material=MaterialInput(
             mu=1.256637e-4,  # Aco transformador (mu_r ≈ 100)
