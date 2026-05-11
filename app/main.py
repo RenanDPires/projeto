@@ -37,10 +37,20 @@ from app.schemas import (
 )
 from app.core.exercises.q01_tank_losses import simulate_exercise_01, simulate_exercise_03_biot_only
 from app.core.exercises.q02_analytical_solutions import solve_question_02
+from app.core.exercises.q04_rectangular_conductors import solve_question_04_rectangular_conductors
+from app.core.electromagnetics.rectangular_conductors import (
+    create_q4_geometry_figure,
+    create_q4_power_loss_comparison,
+)
 from app.core.electromagnetics.biot_savart import calculate_loss_analytical
 from app.core.geometry.validation import GeometricValidator
 from app.core.geometry.plate import create_plate_from_input
 from app.components.geometry_plot import plot_geometry
+from app.core.electromagnetics.sheet_conductors import (
+    calculate_power_loss_sheet_conductor,
+    compare_conductor_geometries,
+)
+from app.core.exercises.q05_comparison_methods import solve_question_05_comparison
 
 # Configuracao da pagina Streamlit
 st.set_page_config(
@@ -749,6 +759,453 @@ def _show_assessment_q3_tab() -> None:
     show_exercise_01_page(biot_only=True)
 
 
+def _show_assessment_q4_tab() -> None:
+    """Questao 4 da avaliacao: condutores retangulares de cobre."""
+    st.markdown("### Questão 4: Condutores Retangulares de Cobre")
+    st.caption(
+        "Enunciado: (a) Deduzir equações de campo H_z, densidade de corrente J_x "
+        "e perdas para três variantes de geometria; "
+        "(b) Calcular densidade superficial de perdas [W/m²]"
+    )
+    st.info(
+        "Referências: Del Vecchio (2010) Seção 15.3.2.1, pág 426 | "
+        "Kulkarni & Khaparde (2013) Seção 4.5.1, pág 150"
+    )
+
+    # Abas para as partes (a) derivação e (b) cálculo
+    tab_derivation, tab_calculation, tab_figures = st.tabs(
+        ["Parte (a): Deduções", "Parte (b): Cálculo Numérico", "Figura 3: Geometrias"]
+    )
+
+    with tab_derivation:
+        st.markdown("#### Parte (a): Deduções das Equações")
+        
+        st.markdown("**Três Variantes de Condutores Retangulares**")
+        
+        col_a1, col_a2, col_a3 = st.columns(3)
+        
+        with col_a1:
+            st.subheader("Variante (a)")
+            st.latex(r"\text{Campo em ambas as superfícies}")
+            st.latex(r"H_z(x) = H_0 \cosh\left(\frac{x}{\delta}\right)")
+            st.latex(
+                r"P_a = \frac{H_0^2}{\sigma\delta} \tanh\left(\frac{b}{\delta}\right)"
+            )
+            st.caption("Aplicação: Condutor imerso em campo uniforme")
+        
+        with col_a2:
+            st.subheader("Variante (b)")
+            st.latex(r"\text{Campo em uma superfície (semi-espaço)}")
+            st.latex(r"H_z(y) = H_0 \exp\left(-\frac{y}{\delta}\right)")
+            st.latex(r"P_b = \frac{H_0^2}{\sigma\delta}")
+            st.caption("Aplicação: Condutor em placa laminar")
+        
+        with col_a3:
+            st.subheader("Variante (c)")
+            st.latex(r"\text{Espaço finito (sanduíche)}")
+            st.latex(
+                r"H_z(x) = H_0 \frac{\sinh\left(\frac{b-x}{\delta}\right)}{\sinh\left(\frac{b}{\delta}\right)}"
+            )
+            st.latex(
+                r"P_c = \frac{H_0^2}{\sigma\delta} \coth\left(\frac{b}{\delta}\right)"
+            )
+            st.caption("Aplicação: Sanduíche com confinamento")
+        
+        st.divider()
+        st.markdown("**Equação de Difusão (Maxwell)**")
+        st.latex(
+            r"\nabla^2 H_z - \frac{\omega\mu\sigma}{2}(1-j) H_z = 0"
+        )
+        st.latex(
+            r"\text{Profundidade de penetração: } \delta = \sqrt{\frac{2}{\omega\mu\sigma}}"
+        )
+
+    with tab_calculation:
+        st.markdown("#### Parte (b): Cálculo da Densidade Superficial de Perdas")
+        
+        col_b1, col_b2, col_b3 = st.columns(3)
+        
+        with col_b1:
+            st.markdown("**Geometria**")
+            half_width_b_cm = st.number_input(
+                "Meia-largura b [cm]", min_value=0.1, value=2.5, key="q4_b"
+            )
+            full_width = 2 * half_width_b_cm
+            st.metric("Largura total 2b", f"{full_width:.2f} cm")
+        
+        with col_b2:
+            st.markdown("**Material: Cobre**")
+            conductivity = st.number_input(
+                "Condutividade σ [S/m]", 
+                min_value=1e6, 
+                value=5.8e7,
+                format="%.2e",
+                key="q4_sigma"
+            )
+        
+        with col_b3:
+            st.markdown("**Operação**")
+            frequency = st.number_input(
+                "Frequência [Hz]", min_value=1.0, value=60.0, key="q4_freq"
+            )
+            h0_field = st.number_input(
+                "Campo H₀ [A/m]", min_value=0.1, value=6.0, key="q4_h0"
+            )
+        
+        if st.button("Calcular Questão 4", type="primary", key="q4_calc"):
+            try:
+                # Calcular usando módulo Q4
+                result = solve_question_04_rectangular_conductors(
+                    half_width_b_cm=float(half_width_b_cm),
+                    surface_magnetic_field_h0_a_per_m=float(h0_field),
+                    conductivity_s_per_m=float(conductivity),
+                    frequency_hz=float(frequency),
+                    permeability_rel=1.0,
+                )
+                
+                st.divider()
+                st.markdown("### Resultados")
+                
+                # Parâmetros derivados
+                col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+                with col_r1:
+                    st.metric(
+                        "Profundidade δ",
+                        f"{result.skin_depth_mm:.4f}",
+                        "mm"
+                    )
+                with col_r2:
+                    st.metric(
+                        "Frequência angular ω",
+                        f"{result.omega_rad_s:.2f}",
+                        "rad/s"
+                    )
+                with col_r3:
+                    st.metric(
+                        "Razão b/δ",
+                        f"{result.skin_depth_ratio_b_over_delta:.4f}",
+                        ""
+                    )
+                with col_r4:
+                    st.metric(
+                        "Fator tanh(b/δ)",
+                        f"{result.variant_a_hyperbolic_factor:.6f}",
+                        ""
+                    )
+                
+                st.divider()
+                
+                # Tabela comparativa de perdas
+                st.markdown("**Densidade Superficial de Perdas [W/m²]**")
+                
+                table_data = {
+                    "Variante": ["(a) Campo em ambas", "(b) Campo em uma", "(c) Espaço finito"],
+                    "Fórmula": [
+                        "H₀²/(σδ) · tanh(b/δ)",
+                        "H₀²/(σδ)",
+                        "H₀²/(σδ) · coth(b/δ)"
+                    ],
+                    "Perdas [W/m²]": [
+                        f"{result.variant_a_power_loss_w_per_m2:.6e}",
+                        f"{result.variant_b_power_loss_w_per_m2:.6e}",
+                        f"{result.variant_c_power_loss_w_per_m2:.6e}"
+                    ],
+                    "Relativo a (b)": [
+                        f"{result.power_loss_ratio_a_to_b:.6f}",
+                        "1.0000",
+                        f"{result.power_loss_ratio_c_to_b:.6f}"
+                    ]
+                }
+                
+                st.dataframe(table_data, use_container_width=True, hide_index=True)
+                
+                st.divider()
+                
+                # Densidade de corrente máxima
+                st.markdown("**Densidade de Corrente Induzida Máxima [A/m²]**")
+                
+                col_j1, col_j2, col_j3 = st.columns(3)
+                with col_j1:
+                    st.metric("J_max (a)", f"{result.max_current_density_var_a_a_per_m2:.4e}", "A/m²")
+                with col_j2:
+                    st.metric("J_max (b)", f"{result.max_current_density_var_b_a_per_m2:.4e}", "A/m²")
+                with col_j3:
+                    st.metric("J_max (c)", f"{result.max_current_density_var_c_a_per_m2:.4e}", "A/m²")
+                
+                st.divider()
+                
+                # Notas
+                st.markdown("**Notas Físicas**")
+                for note in result.notes:
+                    st.caption(f"• {note}")
+                
+            except Exception as e:
+                st.error(f"Erro no cálculo: {str(e)}")
+
+    with tab_figures:
+        st.markdown("#### Figura 3: Geometrias das Três Variantes")
+        st.info("Visualizações das geometrias e perfis de campo magnético para cada variante.")
+        
+        try:
+            # Gerar figuras
+            fig_geometry = create_q4_geometry_figure()
+            fig_table, calc_results = create_q4_power_loss_comparison()
+            
+            # Exibir
+            st.plotly_chart(fig_geometry, use_container_width=True)
+            st.plotly_chart(fig_table, use_container_width=True)
+            
+        except Exception as e:
+            st.warning(f"Não foi possível gerar as figuras: {str(e)}")
+
+
+
+def _show_assessment_q5_tab() -> None:
+    """Questao 5 da avaliacao: comparacao de metodos para resistencia AC e indutancia de fuga."""
+    st.markdown("### Questão 5: Comparação de Métodos para Resistência AC e Indutância de Fuga")
+    st.caption(
+        "Artigo de Referência: 'Comparison of Analytical Methods for Calculating the AC Resistance "
+        "and Leakage Inductance of Medium-Frequency Transformers' - Prof. Mauricio Valencia Ferreira da Luz"
+    )
+    st.info(
+        "Implementação de três geometrias de condutores usados em transformadores de potência: "
+        "Circular (Q2), Retangular (Q4), e Tipo Folha (Q5)"
+    )
+
+    tab_theory, tab_calculation, tab_comparison = st.tabs(
+        ["Parte (a): Teoria", "Parte (b): Cálculo Comparativo", "Figura: Comparação"]
+    )
+
+    with tab_theory:
+        st.markdown("#### Parte (a): Três Tipos de Condutores")
+        
+        col_t1, col_t2, col_t3 = st.columns(3)
+        
+        with col_t1:
+            st.subheader("1. Condutor Circular")
+            st.markdown("**Aplicação:** Enrolamentos tradicionais")
+            st.latex(r"H_\phi(r) = H_0 e^{-(r_{ext}-r)/\delta}")
+            st.latex(r"\delta = \sqrt{\frac{2}{\omega\mu\sigma}}")
+            st.caption("Referência: Q2 - Equação de Difusão em Coordenadas Cilíndricas")
+        
+        with col_t2:
+            st.subheader("2. Condutor Retangular")
+            st.markdown("**Aplicação:** Transformadores de potência")
+            st.markdown("**Variantes:**")
+            st.markdown("- (a) Ambas superfícies: $P_a = \frac{H_0^2}{\sigma\delta}\tanh(b/\delta)$")
+            st.markdown("- (b) Semi-espaço: $P_b = \frac{H_0^2}{\sigma\delta}$ [BASE]")
+            st.markdown("- (c) Finito: $P_c = \frac{H_0^2}{\sigma\delta}\coth(b/\delta)$")
+            st.caption("Referência: Q4 - Del Vecchio (2010), Kulkarni (2013)")
+        
+        with col_t3:
+            st.subheader("3. Condutor Tipo Folha")
+            st.markdown("**Aplicação:** Estruturas laminadas")
+            st.latex(r"H(y) = H_0 e^{-y/\delta}")
+            st.markdown("Semi-infinito: $P_{sheet} = \frac{H_0^2}{\sigma\delta}$")
+            st.markdown("Espessura finita:")
+            st.latex(r"P_{finite} = \frac{H_0^2}{\sigma\delta}\cdot\frac{1-e^{-2t/\delta}}{2}")
+            st.caption("Referência: Ferreira et al. - Comparison of Analytical Methods")
+        
+        st.divider()
+        st.markdown("**Equação Fundamental (Difusão em Condutor)**")
+        st.latex(r"\nabla^2 H - \frac{\omega\mu\sigma}{2}(1-j)H = 0")
+        st.markdown("**Profundidade de Penetração (Skin Depth):**")
+        st.markdown("Todos os tipos compartilham: $\delta \propto 1/\sqrt{f}$")
+
+    with tab_calculation:
+        st.markdown("#### Parte (b): Cálculo Numérico Comparativo")
+        
+        col_p1, col_p2, col_p3 = st.columns(3)
+        
+        with col_p1:
+            st.markdown("**Geometria & Material**")
+            char_dim_cm = st.number_input(
+                "Dimensão característica [cm]", 
+                min_value=0.1, 
+                value=2.5, 
+                key="q5_char_dim"
+            )
+            conductivity = st.number_input(
+                "Condutividade σ [S/m]",
+                min_value=1e5,
+                value=5.8e7,
+                format="%.2e",
+                key="q5_sigma"
+            )
+        
+        with col_p2:
+            st.markdown("**Operação**")
+            frequency = st.number_input(
+                "Frequência [Hz]",
+                min_value=0.1,
+                value=60.0,
+                key="q5_freq"
+            )
+            h0_field = st.number_input(
+                "Campo H₀ [A/m]",
+                min_value=0.1,
+                value=6.0,
+                key="q5_h0"
+            )
+        
+        with col_p3:
+            st.markdown("**Parâmetros Cilíndricos (Q2)**")
+            outer_radius_cm = st.number_input(
+                "Raio externo [cm]",
+                min_value=1.0,
+                value=91.0,
+                key="q5_r_ext"
+            )
+            inner_radius_cm = st.number_input(
+                "Raio interno [cm]",
+                min_value=0.1,
+                value=16.5,
+                key="q5_r_int"
+            )
+        
+        if st.button("Calcular Comparação Q5", type="primary", key="q5_calc"):
+            try:
+                result = solve_question_05_comparison(
+                    frequency_hz=float(frequency),
+                    surface_magnetic_field_h0_a_per_m=float(h0_field),
+                    characteristic_dimension_cm=float(char_dim_cm),
+                    conductivity_s_per_m=float(conductivity),
+                    permeability_rel=1.0,
+                    material_name="Cobre",
+                    outer_radius_cm=float(outer_radius_cm),
+                    inner_radius_cm=float(inner_radius_cm),
+                )
+                
+                st.divider()
+                st.markdown("### Resultados da Comparação")
+                
+                col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+                with col_r1:
+                    st.metric(
+                        "Profundidade δ",
+                        f"{result.skin_depth_mm:.4f}",
+                        "mm"
+                    )
+                with col_r2:
+                    st.metric(
+                        "Razão b/δ",
+                        f"{result.dimensionless_ratio:.4f}",
+                        "-"
+                    )
+                with col_r3:
+                    st.metric(
+                        "Frequência",
+                        f"{result.frequency_hz:.1f}",
+                        "Hz"
+                    )
+                with col_r4:
+                    st.metric(
+                        "H₀",
+                        f"{result.surface_magnetic_field_a_per_m:.2f}",
+                        "A/m"
+                    )
+                
+                st.divider()
+                st.markdown("### Perdas [W/m²] - Comparação dos 3 Tipos")
+                
+                loss_data = {
+                    "Tipo de Condutor": [
+                        "Circular",
+                        "Retangular (a) - Simétrico",
+                        "Retangular (b) - Semi-infinito [BASE]",
+                        "Retangular (c) - Finito",
+                        "Folha - Semi-infinito",
+                        "Folha - Espessura Finita"
+                    ],
+                    "Perda [W/m²]": [
+                        f"{result.circular_conductor_loss_w_per_m2:.4e}",
+                        f"{result.rectangular_variant_a_loss_w_per_m2:.4e}",
+                        f"{result.rectangular_variant_b_loss_w_per_m2:.4e}",
+                        f"{result.rectangular_variant_c_loss_w_per_m2:.4e}",
+                        f"{result.sheet_semi_infinite_loss_w_per_m2:.4e}",
+                        f"{result.sheet_finite_loss_w_per_m2:.4e}",
+                    ],
+                    "Relativo a Rect(b)": [
+                        f"{result.ratio_circular_to_rect_b:.4f}×",
+                        f"{result.ratio_rect_a_to_b:.4f}×",
+                        "1.0000×",
+                        f"{result.ratio_rect_c_to_b:.4f}×",
+                        f"{result.ratio_sheet_semi_to_rect_b:.4f}×",
+                        f"{result.ratio_sheet_finite_to_rect_b:.4f}×",
+                    ]
+                }
+                
+                df_losses = __import__("pandas").DataFrame(loss_data)
+                st.dataframe(df_losses, use_container_width=True)
+                
+                st.divider()
+                st.markdown("### Densidade de Corrente Máxima [A/m²]")
+                
+                j_data = {
+                    "Tipo": ["Circular", "Retangular (a)", "Folha"],
+                    "J_max [A/m²]": [
+                        f"{result.max_current_density_circular_a_per_m2:.4e}",
+                        f"{result.max_current_density_rectangular_a_per_m2:.4e}",
+                        f"{result.max_current_density_sheet_a_per_m2:.4e}",
+                    ]
+                }
+                df_j = __import__("pandas").DataFrame(j_data)
+                st.dataframe(df_j, use_container_width=True)
+                
+                st.divider()
+                st.markdown("### Interpretação Física")
+                st.info(result.notes)
+                
+            except Exception as e:
+                st.error(f"Erro no cálculo: {str(e)}")
+
+    with tab_comparison:
+        st.markdown("#### Figura: Visualização Comparativa")
+        st.info("Tabelas comparativas gerando...")
+        
+        try:
+            # Usar dados padrão para visualização
+            comparison = compare_conductor_geometries(
+                surface_magnetic_field_h0_a_per_m=6.0,
+                conductivity_s_per_m=5.8e7,
+                frequency_hz=60,
+                characteristic_dimension_m=0.025,
+            )
+            
+            # Criar tabela de comparação
+            comp_data = {
+                "Geometria": [
+                    comparison["rectangular_symmetric"]["type"],
+                    comparison["sheet_semi_infinite"]["type"],
+                    comparison["sheet_finite"]["type"],
+                ],
+                "Perda [W/m²]": [
+                    f"{comparison['rectangular_symmetric']['power_loss_w_per_m2']:.4e}",
+                    f"{comparison['sheet_semi_infinite']['power_loss_w_per_m2']:.4e}",
+                    f"{comparison['sheet_finite']['power_loss_w_per_m2']:.4e}",
+                ],
+                "Fator": [
+                    f"{comparison['rectangular_symmetric']['factor']:.6f}",
+                    f"{comparison['sheet_semi_infinite']['factor']:.6f}",
+                    f"{comparison['sheet_finite']['factor']:.6f}",
+                ],
+                "Relativo": [
+                    f"{comparison['rectangular_symmetric']['relative_to_baseline']:.4f}×",
+                    f"{comparison['sheet_semi_infinite']['relative_to_baseline']:.4f}×",
+                    f"{comparison['sheet_finite']['relative_to_baseline']:.4f}×",
+                ]
+            }
+            
+            df_comp = __import__("pandas").DataFrame(comp_data)
+            st.dataframe(df_comp, use_container_width=True)
+            
+            st.markdown("**Condições:** H₀=6.0 A/m, σ=5.8e7 S/m, b=2.5cm, f=60Hz, δ=8.53mm")
+            
+        except Exception as e:
+            st.warning(f"Não foi possível gerar figuras: {str(e)}")
+
+
+
 def show_assessment_01_page() -> None:
     """Pagina agregadora da Avaliacao 1 com estrutura por questao."""
     st.markdown("## Avaliação 1")
@@ -772,18 +1229,10 @@ def show_assessment_01_page() -> None:
         _show_assessment_q3_tab()
 
     with tab_q4:
-        _show_placeholder_question_card(
-            "Questão 4: condutores retangulares de cobre",
-            "Próximo passo: implementar equações de campo, densidade de corrente e perdas por área, "
-            "com cálculo de densidade superficial em W/m².",
-        )
+        _show_assessment_q4_tab()
 
     with tab_q5:
-        _show_placeholder_question_card(
-            "Questão 5: comparação de métodos para resistência AC e indutância de fuga",
-            "Próximo passo: incorporar modelos para condutores circulares, retangulares e tipo folha "
-            "a partir do artigo de referência.",
-        )
+        _show_assessment_q5_tab()
 
 
 def main():
