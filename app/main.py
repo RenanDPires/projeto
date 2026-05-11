@@ -36,7 +36,6 @@ from app.schemas import (
     get_material_presets,
 )
 from app.core.exercises.q01_tank_losses import simulate_exercise_01, simulate_exercise_03_biot_only
-from app.core.exercises.q02_analytical_solutions import solve_question_02
 from app.core.exercises.q04_rectangular_conductors import solve_question_04_rectangular_conductors
 from app.core.electromagnetics.rectangular_conductors import (
     create_q4_geometry_figure,
@@ -46,11 +45,6 @@ from app.core.electromagnetics.biot_savart import calculate_loss_analytical
 from app.core.geometry.validation import GeometricValidator
 from app.core.geometry.plate import create_plate_from_input
 from app.components.geometry_plot import plot_geometry
-from app.core.electromagnetics.sheet_conductors import (
-    calculate_power_loss_sheet_conductor,
-    compare_conductor_geometries,
-)
-from app.core.exercises.q05_comparison_methods import solve_question_05_comparison
 
 # Configuracao da pagina Streamlit
 st.set_page_config(
@@ -237,7 +231,7 @@ def _build_exercise_01_pdf(
     y = _write_lines(
         [
             f"Perda analitica: {result.total_loss_analytical_w:.4f} W",
-            f"Perda aproximada (Biot-Savart): {result.total_loss_approximate_w:.4f} W",
+            f"Perda aproximada: {result.total_loss_approximate_w:.4f} W",
             f"Maximo campo H: {result.max_h_field:.4f} A/m",
             f"Maxima densidade de perdas: {result.max_loss_density:.4f} W/m2",
             f"Area valida: {result.valid_area_m2:.6f} m2",
@@ -426,7 +420,7 @@ def _show_exercise_01_intro_sections() -> None:
     """Exibe base teorica e resultados validados com conteudo expansivel."""
     slides_dir = PROJECT_ROOT / "base_teorica" / "Exercicio_1"
     section_slides = {
-        "Base teórica 1: Método analítico": [
+        "Base teórica 1:": [
             "pagina 16.png",
             "pagina 17.png",
             "pagina 18.png",
@@ -435,23 +429,6 @@ def _show_exercise_01_intro_sections() -> None:
         "Resultados validados": ["pagina 20.png"],
     }
 
-    st.markdown("### Apresentação da questão")
-
-    for section_title, filenames in section_slides.items():
-        with st.expander(section_title, expanded=False):
-            for filename in filenames:
-                img_path = slides_dir / filename
-                if img_path.exists():
-                    st.image(str(img_path), caption=filename, use_container_width=True)
-                else:
-                    st.warning(f"Slide não encontrado: {img_path}")
-
-
-def _show_placeholder_question_card(question: str, description: str) -> None:
-    """Exibe um card de placeholder para questoes ainda nao implementadas."""
-    st.markdown(f"### {question}")
-    st.info("Esta questão ainda está em construção nesta versão inicial da Avaliação 1.")
-    st.write(description)
 
 
 def _show_assessment_q1_tab() -> None:
@@ -459,7 +436,6 @@ def _show_assessment_q1_tab() -> None:
     st.markdown("### Questão 1: Perdas por correntes induzidas na tampa circular")
     st.caption(
         "Dados do enunciado: f=60 Hz, D=910 mm, d=165 mm, c=9.52 mm, Im=1000 Arms. "
-        "O cálculo desta primeira versão usa o método analítico já validado no projeto."
     )
 
     col_a, col_b = st.columns(2)
@@ -511,208 +487,327 @@ def _show_assessment_q1_tab() -> None:
             }
         )
 
-    st.markdown("#### Resultado da Questão 1 (método analítico)")
+    st.markdown("#### Resultado da Questão 1")
     st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.markdown("#### Gráficos paramétricos (Q1)")
+    st.caption(
+        "Variações das grandezas mais relevantes da equação analítica: "
+        "corrente Im, frequência f, espessura c e fator geométrico ln(D/d)."
+    )
+
+    material_labels = [m["label"] for m in materials]
+    selected_material = st.selectbox(
+        "Material para as curvas paramétricas",
+        options=material_labels,
+        index=0,
+        key="av1_q1_graph_material",
+    )
+    material_cfg = next(m for m in materials if m["label"] == selected_material)
+
+    mu_graph = mu0 * float(material_cfg["mu_r"])
+    sigma_graph = float(material_cfg["sigma"])
+    thickness_m_base = float(thickness_mm) * 1e-3
+
+    def _q1_loss(i_a: float, c_mm: float, f_hz: float, ln_factor: float) -> float:
+        return float(
+            calculate_loss_analytical(
+                im=float(i_a),
+                thickness_m=float(c_mm) * 1e-3,
+                frequency_hz=float(f_hz),
+                mu=mu_graph,
+                sigma=sigma_graph,
+                num_conductors=1,
+                ln_ba=float(ln_factor),
+            )
+        )
+
+    with st.expander("Visualizações 2D", expanded=True):
+        st.caption("Curvas paramétricas analíticas no mesmo padrão da Q3.")
+        show_2d = st.toggle("Gerar gráficos 2D", value=True, key="av1_q1_show_2d")
+        if not show_2d:
+            st.info("Ative 'Gerar gráficos 2D' para exibir as curvas da Q1.")
+        else:
+            current_end = max(3000.0, float(im_a) * 1.2)
+            sweep_current_a = _limit_sweep_points(np.linspace(0.0, current_end, 300))
+            losses_current = [_q1_loss(i_a, float(thickness_mm), float(frequency_hz), ln_ba) for i_a in sweep_current_a]
+
+            freq_end = max(180.0, float(frequency_hz) * 1.5)
+            sweep_frequency_hz = _limit_sweep_points(np.linspace(0.1, freq_end, 260))
+            losses_frequency = [_q1_loss(float(im_a), float(thickness_mm), f_hz, ln_ba) for f_hz in sweep_frequency_hz]
+
+            thickness_end_mm = max(25.0, float(thickness_mm) * 1.5)
+            sweep_thickness_mm = _limit_sweep_points(np.linspace(0.1, thickness_end_mm, 260))
+            losses_thickness = [_q1_loss(float(im_a), c_mm, float(frequency_hz), ln_ba) for c_mm in sweep_thickness_mm]
+
+            inner_min_mm = max(1.0, 0.1 * float(outer_d_mm))
+            inner_max_mm = min(0.95 * float(outer_d_mm), float(outer_d_mm) - 1.0)
+            sweep_inner_mm = _limit_sweep_points(np.linspace(inner_min_mm, inner_max_mm, 280))
+            ln_values = np.log(float(outer_d_mm) / sweep_inner_mm)
+            losses_ln = [_q1_loss(float(im_a), float(thickness_mm), float(frequency_hz), ln_val) for ln_val in ln_values]
+
+            fig_q1 = make_subplots(
+                rows=2,
+                cols=2,
+                subplot_titles=(
+                    "Perdas por corrente Im",
+                    "Perdas por frequência f",
+                    "Perdas por espessura c",
+                    "Perdas por fator ln(D/d)",
+                ),
+                horizontal_spacing=0.1,
+                vertical_spacing=0.16,
+            )
+            fig_q1.add_trace(go.Scatter(x=sweep_current_a, y=losses_current, mode="lines", line={"width": 3}), row=1, col=1)
+            fig_q1.add_trace(go.Scatter(x=sweep_frequency_hz, y=losses_frequency, mode="lines", line={"width": 3}), row=1, col=2)
+            fig_q1.add_trace(go.Scatter(x=sweep_thickness_mm, y=losses_thickness, mode="lines", line={"width": 3}), row=2, col=1)
+            fig_q1.add_trace(go.Scatter(x=ln_values, y=losses_ln, mode="lines", line={"width": 3}), row=2, col=2)
+            fig_q1.update_xaxes(title_text="Im [A]", row=1, col=1)
+            fig_q1.update_xaxes(title_text="f [Hz]", row=1, col=2)
+            fig_q1.update_xaxes(title_text="c [mm]", row=2, col=1)
+            fig_q1.update_xaxes(title_text="ln(D/d)", row=2, col=2)
+            fig_q1.update_yaxes(title_text="Perdas [W]", row=1, col=1)
+            fig_q1.update_yaxes(title_text="Perdas [W]", row=1, col=2)
+            fig_q1.update_yaxes(title_text="Perdas [W]", row=2, col=1)
+            fig_q1.update_yaxes(title_text="Perdas [W]", row=2, col=2)
+            fig_q1.update_layout(height=760, hovermode="x unified", showlegend=False)
+            st.plotly_chart(fig_q1, use_container_width=True)
+
+            material_losses = [
+                float(
+                    calculate_loss_analytical(
+                        im=float(im_a),
+                        thickness_m=thickness_m_base,
+                        frequency_hz=float(frequency_hz),
+                        mu=mu0 * float(material["mu_r"]),
+                        sigma=float(material["sigma"]),
+                        num_conductors=1,
+                        ln_ba=ln_ba,
+                    )
+                )
+                for material in materials
+            ]
+            fig_material = go.Figure(
+                data=[go.Bar(x=material_labels, y=material_losses, text=[f"{v:.2f} W" for v in material_losses], textposition="auto")]
+            )
+            fig_material.update_layout(
+                title="Perdas no ponto de operação por material",
+                xaxis_title="Material",
+                yaxis_title="Perdas [W]",
+                margin={"l": 20, "r": 20, "t": 60, "b": 20},
+                height=360,
+            )
+            st.plotly_chart(fig_material, use_container_width=True)
+
+    st.divider()
+    with st.expander("Visualizações 3D", expanded=False):
+        st.caption("Superfícies analíticas no mesmo layout da Q3.")
+        show_3d = st.toggle("Gerar gráficos 3D", value=True, key="av1_q1_show_3d")
+        if not show_3d:
+            st.info("Ative 'Gerar gráficos 3D' para exibir as superfícies da Q1.")
+        else:
+            current_3d = np.linspace(0.0, max(3000.0, float(im_a) * 1.2), 12)
+            thickness_3d = np.linspace(0.1, max(25.0, float(thickness_mm) * 1.5), 12)
+            frequency_3d = np.linspace(0.1, max(180.0, float(frequency_hz) * 1.5), 12)
+
+            z_current_thickness = np.zeros((len(thickness_3d), len(current_3d)))
+            z_current_frequency = np.zeros((len(frequency_3d), len(current_3d)))
+            z_thickness_frequency = np.zeros((len(frequency_3d), len(thickness_3d)))
+
+            for i, c_val in enumerate(thickness_3d):
+                for j, i_val in enumerate(current_3d):
+                    z_current_thickness[i, j] = _q1_loss(i_val, c_val, float(frequency_hz), ln_ba)
+
+            for i, f_val in enumerate(frequency_3d):
+                for j, i_val in enumerate(current_3d):
+                    z_current_frequency[i, j] = _q1_loss(i_val, float(thickness_mm), f_val, ln_ba)
+
+            for i, f_val in enumerate(frequency_3d):
+                for j, c_val in enumerate(thickness_3d):
+                    z_thickness_frequency[i, j] = _q1_loss(float(im_a), c_val, f_val, ln_ba)
+
+            fig_3d_ct = go.Figure(
+                data=[
+                    go.Surface(
+                        x=current_3d,
+                        y=thickness_3d,
+                        z=z_current_thickness,
+                        colorscale="Viridis",
+                        showscale=True,
+                    )
+                ]
+            )
+            fig_3d_ct.update_layout(
+                title=f"Q1 3D: Perdas por Corrente × Espessura (f = {frequency_hz:.1f} Hz)",
+                height=560,
+                margin={"l": 0, "r": 0, "t": 50, "b": 0},
+                scene={"xaxis_title": "Corrente [A]", "yaxis_title": "Espessura [mm]", "zaxis_title": "Perdas [W]"},
+            )
+            st.plotly_chart(fig_3d_ct, use_container_width=True)
+
+            fig_3d_cf = go.Figure(
+                data=[
+                    go.Surface(
+                        x=current_3d,
+                        y=frequency_3d,
+                        z=z_current_frequency,
+                        colorscale="Viridis",
+                        showscale=True,
+                    )
+                ]
+            )
+            fig_3d_cf.update_layout(
+                title=f"Q1 3D: Perdas por Corrente × Frequência (c = {thickness_mm:.2f} mm)",
+                height=560,
+                margin={"l": 0, "r": 0, "t": 50, "b": 0},
+                scene={"xaxis_title": "Corrente [A]", "yaxis_title": "Frequência [Hz]", "zaxis_title": "Perdas [W]"},
+            )
+            st.plotly_chart(fig_3d_cf, use_container_width=True)
+
+            fig_3d_tf = go.Figure(
+                data=[
+                    go.Surface(
+                        x=thickness_3d,
+                        y=frequency_3d,
+                        z=z_thickness_frequency,
+                        colorscale="Viridis",
+                        showscale=True,
+                    )
+                ]
+            )
+            fig_3d_tf.update_layout(
+                title=f"Q1 3D: Perdas por Espessura × Frequência (Im = {im_a:.1f} A)",
+                height=560,
+                margin={"l": 0, "r": 0, "t": 50, "b": 0},
+                scene={"xaxis_title": "Espessura [mm]", "yaxis_title": "Frequência [Hz]", "zaxis_title": "Perdas [W]"},
+            )
+            st.plotly_chart(fig_3d_tf, use_container_width=True)
+
+    st.caption(
+        "Constantes usadas nas curvas: método analítico com 1 condutor, "
+        f"D={outer_d_mm:.1f} mm, d={inner_d_mm:.1f} mm, c={thickness_mm:.2f} mm, "
+        f"Im={im_a:.1f} A, f={frequency_hz:.1f} Hz (exceto na variável varrida)."
+    )
 
 
 def _show_assessment_q2_tab() -> None:
-    """Questao 2 da avaliacao: deducoes analiticas da equacao de difusao e perdas."""
-    st.markdown("### Questão 2: Equação de difusão, campo H_φ e correntes induzidas")
+    """Questao 2 da avaliacao: deducao teorica em coordenadas cilindricas (sem calculo numerico)."""
+    st.markdown("### Questão 2: Dedução da Equação de Difusão na Tampa Circular")
     st.caption(
-        "Enunciado: (a) Deduzir a equação de difusão e H_φ; "
-        "(b) Deduzir a densidade de corrente J_r; "
-        "(c) Deduzir e calcular as perdas totais."
+        "Escopo desta aba: apenas dedução analítica das partes (a), (b) e (c), "
+        "sem cálculo numérico."
     )
-    st.info("Esta Questão resolve a equação de difusão em coordenadas cilíndricas para a tampa circular.")
+    st.info(
+        "Referência principal: Del Vecchio, item 15.5 \"Tank Losses Associated with the Bushings\", "
+        "página 456."
+    )
 
-    # Dados padrão da questão (tampa circular da Q1)
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### Geometria da tampa circular")
-        outer_d_mm = st.number_input(
-            "Diâmetro externo D [mm]", min_value=1.0, value=910.0, key="av1_q2_d_ext"
-        )
-        inner_d_mm = st.number_input(
-            "Diâmetro interno d [mm]", min_value=1.0, value=165.0, key="av1_q2_d_int"
-        )
-        thickness_mm = st.number_input(
-            "Espessura c [mm]", min_value=0.01, value=9.52, key="av1_q2_thickness"
-        )
-    
-    with col2:
-        st.markdown("#### Parâmetros de operação")
-        frequency_hz = st.number_input(
-            "Frequência [Hz]", min_value=0.1, value=60.0, key="av1_q2_f"
-        )
-        current_a = st.number_input(
-            "Corrente [A]", min_value=0.0, value=1000.0, key="av1_q2_im"
+    tab_a, tab_b, tab_c = st.tabs(
+        [
+            "Parte (a): Difusão e Hφ",
+            "Parte (b): Densidade de corrente Jr",
+            "Parte (c): Perdas totais",
+        ]
+    )
+
+    with tab_a:
+        st.markdown("#### Parte (a): Equação de difusão em coordenadas cilíndricas e componente Hφ")
+        st.markdown(
+            "Adota-se regime senoidal em frequência angular $\\omega$, com meio condutor "
+            "linear e isotrópico, e simetria axial na tampa circular."
         )
 
-    # Material
-    col_mat1, col_mat2 = st.columns(2)
-    with col_mat1:
-        st.markdown("#### Material")
-        material_option = st.radio(
-            "Selecionar material",
-            ["Aço carbono", "Aço inox"],
-            key="av1_q2_material",
+        st.markdown("**1) Equações de Maxwell no domínio fasorial (aproximação quasi-estática):**")
+        st.latex(r"\nabla \times \mathbf{H} = \mathbf{J}")
+        st.latex(r"\nabla \times \mathbf{E} = -j\omega\mu\mathbf{H}")
+        st.latex(r"\mathbf{J} = \sigma\mathbf{E}")
+
+        st.markdown("**2) Eliminação de E para obter a difusão em H:**")
+        st.latex(r"\nabla \times \left(\frac{1}{\sigma}\nabla \times \mathbf{H}\right) = -j\omega\mu\mathbf{H}")
+        st.latex(r"\nabla^2\mathbf{H} = j\omega\mu\sigma\,\mathbf{H}")
+
+        st.markdown("**3) Componente azimutal dominante $H_\varphi(r)$ em coordenadas cilíndricas:**")
+        st.latex(
+            r"\frac{1}{r}\frac{d}{dr}\left(r\frac{dH_\varphi}{dr}\right) - \frac{H_\varphi}{r^2} = j\omega\mu\sigma\,H_\varphi"
         )
-        if material_option == "Aço carbono":
-            permeability_rel = 200.0
-            conductivity_s_per_m = 4.0e6
-            material_desc = "Aço carbono: μ_r=200, σ=4.0e6 S/m"
-        else:
-            permeability_rel = 1.0
-            conductivity_s_per_m = 1.33e6
-            material_desc = "Aço inox: μ_r=1, σ=1.33e6 S/m"
+        st.latex(
+            r"\frac{d^2H_\varphi}{dr^2} + \frac{1}{r}\frac{dH_\varphi}{dr} - \left(\frac{1}{r^2}+k^2\right)H_\varphi = 0"
+        )
+
+        st.markdown("com")
+        st.latex(r"k^2 = j\omega\mu\sigma, \quad k = \frac{1+j}{\delta}, \quad \delta = \sqrt{\frac{2}{\omega\mu\sigma}}")
+
+        st.markdown("**4) Solução geral (equação de Bessel modificada de ordem 1):**")
+        st.latex(r"H_\varphi(r) = C_1 I_1(kr) + C_2 K_1(kr)")
+
+        st.markdown(
+            "As constantes $C_1$ e $C_2$ são definidas pelas condições de contorno no anel "
+            "da tampa ($a \le r \le b$)."
+        )
+
+        st.markdown("**5) Aproximação de pele local (quando $\delta \ll b$):**")
+        st.latex(r"H_\varphi(r) \approx H_\varphi(b)\,\exp\!\left[-(1+j)\frac{(b-r)}{\delta}\right]")
+
+    with tab_b:
+        st.markdown("#### Parte (b): Dedução da componente radial induzida Jr")
+        st.markdown("A partir da lei de Ampère no condutor:")
+        st.latex(r"\nabla \times \mathbf{H} = \mathbf{J}")
+
+        st.markdown(
+            "Para o modelo axisimétrico local na espessura da tampa (coordenada $z$), "
+            "a componente radial pode ser escrita como:"
+        )
+        st.latex(r"J_r = -\frac{\partial H_\varphi}{\partial z}")
+
+        st.markdown(
+            "Com a solução difusiva na espessura do metal:"
+        )
+        st.latex(r"H_\varphi(r,z) = H_\varphi(r,0)\,e^{-(1+j)z/\delta}")
+
+        st.markdown("segue:")
+        st.latex(r"J_r(r,z) = \frac{1+j}{\delta}\,H_\varphi(r,0)\,e^{-(1+j)z/\delta}")
+        st.latex(r"J_r(r,z) = \frac{1+j}{\delta}\,H_\varphi(r,z)")
+
+        st.markdown("Magnitude:")
+        st.latex(r"|J_r(r,z)| = \frac{\sqrt{2}}{\delta}\,|H_\varphi(r,z)|")
+
+        st.markdown(
+            "Também vale a relação constitutiva $J_r = \sigma E_r$, com $E_r$ obtido de Faraday."
+        )
+
+    with tab_c:
+        st.markdown("#### Parte (c): Dedução das perdas totais por correntes induzidas")
+        st.markdown("A densidade de potência dissipada por Joule é:")
+        st.latex(r"p = \frac{|J_r|^2}{\sigma}")
+
+        st.markdown(
+            "Para a tampa anular ($a \le r \le b$, $0 \le z \le c$, $0 \le \varphi \le 2\pi$), "
+            "as perdas totais são:"
+        )
+        st.latex(
+            r"P_{tot} = \int_0^{2\pi}\int_a^b\int_0^c \frac{|J_r(r,z)|^2}{\sigma}\,r\,dz\,dr\,d\varphi"
+        )
+        st.latex(r"P_{tot} = \frac{2\pi}{\sigma}\int_a^b r\left[\int_0^c |J_r(r,z)|^2dz\right]dr")
+
+        st.markdown("Substituindo $J_r(r,z)=J_r(r,0)e^{-(1+j)z/\delta}$:")
+        st.latex(r"|J_r(r,z)|^2 = |J_r(r,0)|^2e^{-2z/\delta}")
+        st.latex(r"\int_0^c e^{-2z/\delta}dz = \frac{\delta}{2}\left(1-e^{-2c/\delta}\right)")
+
+        st.markdown("Logo, a expressão deduzida para perdas totais fica:")
+        st.latex(
+            r"P_{tot} = \frac{\pi\delta}{\sigma}\left(1-e^{-2c/\delta}\right)\int_a^b r\,|J_r(r,0)|^2dr"
+        )
+
+        st.markdown("Usando $J_r=(1+j)H_\varphi/\delta$, forma equivalente em $H_\varphi$:")
+        st.latex(
+            r"P_{tot} = \frac{2\pi}{\sigma\delta^2}\int_a^b\int_0^c r\,|H_\varphi(r,z)|^2\,dz\,dr"
+        )
+
+        st.warning(
         
-        st.caption(material_desc)
-    
-    with col_mat2:
-        st.write("")  # Espaçador
-
-    # Botão para calcular
-    if st.button("Calcular Questão 2 (Método Analítico)", type="primary", key="av1_q2_calc"):
-        try:
-            # Validações
-            if inner_d_mm >= outer_d_mm:
-                st.error("O diâmetro interno deve ser menor que o externo.")
-                return
-
-            # Resolver Q2
-            q2_result = solve_question_02(
-                outer_diameter_mm=outer_d_mm,
-                inner_diameter_mm=inner_d_mm,
-                thickness_mm=thickness_mm,
-                current_a_rms=float(current_a),
-                frequency_hz=float(frequency_hz),
-                permeability_rel=float(permeability_rel),
-                conductivity_s_per_m=float(conductivity_s_per_m),
-            )
-
-            # Exibir resultados em abas
-            st.divider()
-            tab_a, tab_b, tab_c, tab_graphs = st.tabs(
-                ["Parte (a): Equação de Difusão", "Parte (b): Densidade de Corrente", 
-                 "Parte (c): Perdas Totais", "Visualizações"]
-            )
-
-            with tab_a:
-                st.markdown("#### Parte (a): Equação de Difusão e Campo H_φ")
-                st.latex(
-                    r"\text{Equação de Difusão em coords. cilíndricas:} \quad "
-                    r"\nabla^2 H_\varphi - \frac{\omega\mu\sigma}{2}(1-j) H_\varphi = 0"
-                )
-                st.latex(
-                    r"H_\varphi(r) = H_0 \exp\left(-\frac{1+j}{2}\frac{\omega\mu\sigma}{2}(b-r)\right)"
-                )
-
-                col_a1, col_a2, col_a3 = st.columns(3)
-                with col_a1:
-                    st.metric("Profundidade de penetração δ", f"{q2_result.skin_depth_m*1e3:.4f}", "mm")
-                with col_a2:
-                    st.metric("Frequência angular ω", f"{q2_result.omega_rad_s:.2f}", "rad/s")
-                with col_a3:
-                    st.metric("H_φ na superfície (r=b)", f"{q2_result.h_field_at_outer_radius_a_per_m:.2f}", "A/m")
-
-                st.markdown("**Constante de propagação complexa:**")
-                col_p1, col_p2 = st.columns(2)
-                with col_p1:
-                    st.text(f"p = (1+j)/δ")
-                    st.text(f"Re(p) = {q2_result.propagation_constant_real:.2e} m⁻¹")
-                with col_p2:
-                    st.text(f"Im(p) = {q2_result.propagation_constant_imag:.2e} m⁻¹")
-
-            with tab_b:
-                st.markdown("#### Parte (b): Densidade de Corrente Induzida J_r")
-                st.latex(
-                    r"\text{Lei de Faraday:} \quad \oint \mathbf{E} \cdot d\mathbf{l} = -\frac{d\Phi_B}{dt}"
-                )
-                st.latex(
-                    r"J_r = \sigma E_r \quad \text{(Lei de Ohm)}"
-                )
-                st.latex(
-                    r"|J_r(r)| \approx \sigma \omega \mu_0 |H_\varphi(r)|"
-                )
-
-                col_b1, col_b2 = st.columns(2)
-                with col_b1:
-                    st.metric("Máxima densidade de corrente", f"{q2_result.max_current_density_a_per_m2:.2e}", "A/m²")
-                with col_b2:
-                    st.metric("Densidade média", f"{q2_result.avg_current_density_a_per_m2:.2e}", "A/m²")
-
-            with tab_c:
-                st.markdown("#### Parte (c): Perdas Totais por Correntes Induzidas")
-                st.latex(
-                    r"P = \iiint \frac{J^2}{\sigma} dV = \int_0^{2\pi} \int_0^c \int_a^b "
-                    r"\frac{J_r^2(r)}{\sigma} r \, dr \, dz \, d\varphi"
-                )
-                st.latex(
-                    r"P = 2\pi c \int_a^b \frac{J_r^2(r)}{\sigma} r \, dr"
-                )
-
-                col_c1, col_c2, col_c3 = st.columns(3)
-                with col_c1:
-                    st.metric("Perdas totais", f"{q2_result.total_losses_w:.2f}", "W")
-                with col_c2:
-                    st.metric("Perdas por área", f"{q2_result.losses_per_unit_area_w_per_mm2:.4e}", "W/mm²")
-                with col_c3:
-                    st.metric("Perdas por volume", f"{q2_result.losses_per_unit_volume_w_per_mm3:.4e}", "W/mm³")
-
-                st.markdown("**Notas:**")
-                for note in q2_result.notes:
-                    st.caption(f"• {note}")
-
-            with tab_graphs:
-                st.markdown("#### Visualizações dos campos e perdas")
-                
-                # Plotar perfil do campo H_φ e densidade de corrente
-                from app.core.electromagnetics.diffusion_equation import (
-                    magnetic_field_circular_plate,
-                    induced_current_density_circular_plate,
-                )
-                
-                outer_radius_m = outer_d_mm / 2.0 * 1e-3
-                inner_radius_m = inner_d_mm / 2.0 * 1e-3
-                mu0 = 4.0 * np.pi * 1e-7
-                mu = permeability_rel * mu0
-                
-                n_points = 150
-                r_values = np.linspace(inner_radius_m, outer_radius_m, n_points)
-                
-                _, h_mag, _ = magnetic_field_circular_plate(
-                    r_values, outer_radius_m, inner_radius_m, current_a, frequency_hz, mu, conductivity_s_per_m
-                )
-                j_mag = induced_current_density_circular_plate(r_values, h_mag, frequency_hz, conductivity_s_per_m)
-                
-                # Converter para mm
-                r_mm = r_values * 1e3
-                
-                # Gráfico de H_φ e J_r
-                fig = make_subplots(
-                    rows=1, cols=2,
-                    subplot_titles=("Campo Magnético H_φ(r)", "Densidade de Corrente |J_r(r)|"),
-                    x_title="Raio [mm]",
-                )
-                
-                fig.add_trace(
-                    go.Scatter(x=r_mm, y=h_mag, name="H_φ", line={"color": "blue", "width": 3}),
-                    row=1, col=1
-                )
-                fig.add_trace(
-                    go.Scatter(x=r_mm, y=j_mag, name="J_r", line={"color": "red", "width": 3}),
-                    row=1, col=2
-                )
-                
-                fig.update_yaxes(title_text="H [A/m]", row=1, col=1)
-                fig.update_yaxes(title_text="J [A/m²]", row=1, col=2)
-                fig.update_layout(height=400, hovermode="x unified")
-                
-                st.plotly_chart(fig, use_container_width=True)
-
-        except Exception as e:
-            st.error(f"Erro no cálculo: {str(e)}")
+            "Não há parâmetros de entrada nem cálculo numérico nesta aba."
+        )
 
 
 def _show_assessment_q3_tab() -> None:
@@ -722,7 +817,7 @@ def _show_assessment_q3_tab() -> None:
         "Enunciado: calcular perdas para 2000 A, 2250 A, 2500 A e 2800 A em 60 Hz, "
         "com aço carbono (sigma=2e7 S/m, mu_r=500)."
     )
-    st.info("Nesta Questão 3, o único método aplicado é Biot-Savart.")
+
 
     base_input = get_default_exercise01_input()
     mu0 = 4.0 * np.pi * 1e-7
@@ -744,11 +839,8 @@ def _show_assessment_q3_tab() -> None:
             q3_rows.append(
                 {
                     "Corrente por condutor [A]": int(current),
-                    "Perda Biot-Savart [W]": round(case_result["total_loss_biot_w"], 4),
-                    "Perda Biot-Savart (slide19 estrito) [W]": round(
-                        case_result["total_loss_biot_slide19_strict_w"], 4
-                    ),
-                    "H máximo [A/m]": round(case_result["max_h_field"], 4),
+                    "Perda [W]": round(case_result["total_loss_biot_w"], 5),
+                    "H máximo [A/m]": round(case_result["max_h_field"], 5),
                 }
             )
 
@@ -959,253 +1051,6 @@ def _show_assessment_q4_tab() -> None:
             st.warning(f"Não foi possível gerar as figuras: {str(e)}")
 
 
-
-def _show_assessment_q5_tab() -> None:
-    """Questao 5 da avaliacao: comparacao de metodos para resistencia AC e indutancia de fuga."""
-    st.markdown("### Questão 5: Comparação de Métodos para Resistência AC e Indutância de Fuga")
-    st.caption(
-        "Artigo de Referência: 'Comparison of Analytical Methods for Calculating the AC Resistance "
-        "and Leakage Inductance of Medium-Frequency Transformers' - Prof. Mauricio Valencia Ferreira da Luz"
-    )
-    st.info(
-        "Implementação de três geometrias de condutores usados em transformadores de potência: "
-        "Circular (Q2), Retangular (Q4), e Tipo Folha (Q5)"
-    )
-
-    tab_theory, tab_calculation, tab_comparison = st.tabs(
-        ["Parte (a): Teoria", "Parte (b): Cálculo Comparativo", "Figura: Comparação"]
-    )
-
-    with tab_theory:
-        st.markdown("#### Parte (a): Três Tipos de Condutores")
-        
-        col_t1, col_t2, col_t3 = st.columns(3)
-        
-        with col_t1:
-            st.subheader("1. Condutor Circular")
-            st.markdown("**Aplicação:** Enrolamentos tradicionais")
-            st.latex(r"H_\phi(r) = H_0 e^{-(r_{ext}-r)/\delta}")
-            st.latex(r"\delta = \sqrt{\frac{2}{\omega\mu\sigma}}")
-            st.caption("Referência: Q2 - Equação de Difusão em Coordenadas Cilíndricas")
-        
-        with col_t2:
-            st.subheader("2. Condutor Retangular")
-            st.markdown("**Aplicação:** Transformadores de potência")
-            st.markdown("**Variantes:**")
-            st.markdown("- (a) Ambas superfícies: $P_a = \frac{H_0^2}{\sigma\delta}\tanh(b/\delta)$")
-            st.markdown("- (b) Semi-espaço: $P_b = \frac{H_0^2}{\sigma\delta}$ [BASE]")
-            st.markdown("- (c) Finito: $P_c = \frac{H_0^2}{\sigma\delta}\coth(b/\delta)$")
-            st.caption("Referência: Q4 - Del Vecchio (2010), Kulkarni (2013)")
-        
-        with col_t3:
-            st.subheader("3. Condutor Tipo Folha")
-            st.markdown("**Aplicação:** Estruturas laminadas")
-            st.latex(r"H(y) = H_0 e^{-y/\delta}")
-            st.markdown("Semi-infinito: $P_{sheet} = \frac{H_0^2}{\sigma\delta}$")
-            st.markdown("Espessura finita:")
-            st.latex(r"P_{finite} = \frac{H_0^2}{\sigma\delta}\cdot\frac{1-e^{-2t/\delta}}{2}")
-            st.caption("Referência: Ferreira et al. - Comparison of Analytical Methods")
-        
-        st.divider()
-        st.markdown("**Equação Fundamental (Difusão em Condutor)**")
-        st.latex(r"\nabla^2 H - \frac{\omega\mu\sigma}{2}(1-j)H = 0")
-        st.markdown("**Profundidade de Penetração (Skin Depth):**")
-        st.markdown("Todos os tipos compartilham: $\delta \propto 1/\sqrt{f}$")
-
-    with tab_calculation:
-        st.markdown("#### Parte (b): Cálculo Numérico Comparativo")
-        
-        col_p1, col_p2, col_p3 = st.columns(3)
-        
-        with col_p1:
-            st.markdown("**Geometria & Material**")
-            char_dim_cm = st.number_input(
-                "Dimensão característica [cm]", 
-                min_value=0.1, 
-                value=2.5, 
-                key="q5_char_dim"
-            )
-            conductivity = st.number_input(
-                "Condutividade σ [S/m]",
-                min_value=1e5,
-                value=5.8e7,
-                format="%.2e",
-                key="q5_sigma"
-            )
-        
-        with col_p2:
-            st.markdown("**Operação**")
-            frequency = st.number_input(
-                "Frequência [Hz]",
-                min_value=0.1,
-                value=60.0,
-                key="q5_freq"
-            )
-            h0_field = st.number_input(
-                "Campo H₀ [A/m]",
-                min_value=0.1,
-                value=6.0,
-                key="q5_h0"
-            )
-        
-        with col_p3:
-            st.markdown("**Parâmetros Cilíndricos (Q2)**")
-            outer_radius_cm = st.number_input(
-                "Raio externo [cm]",
-                min_value=1.0,
-                value=91.0,
-                key="q5_r_ext"
-            )
-            inner_radius_cm = st.number_input(
-                "Raio interno [cm]",
-                min_value=0.1,
-                value=16.5,
-                key="q5_r_int"
-            )
-        
-        if st.button("Calcular Comparação Q5", type="primary", key="q5_calc"):
-            try:
-                result = solve_question_05_comparison(
-                    frequency_hz=float(frequency),
-                    surface_magnetic_field_h0_a_per_m=float(h0_field),
-                    characteristic_dimension_cm=float(char_dim_cm),
-                    conductivity_s_per_m=float(conductivity),
-                    permeability_rel=1.0,
-                    material_name="Cobre",
-                    outer_radius_cm=float(outer_radius_cm),
-                    inner_radius_cm=float(inner_radius_cm),
-                )
-                
-                st.divider()
-                st.markdown("### Resultados da Comparação")
-                
-                col_r1, col_r2, col_r3, col_r4 = st.columns(4)
-                with col_r1:
-                    st.metric(
-                        "Profundidade δ",
-                        f"{result.skin_depth_mm:.4f}",
-                        "mm"
-                    )
-                with col_r2:
-                    st.metric(
-                        "Razão b/δ",
-                        f"{result.dimensionless_ratio:.4f}",
-                        "-"
-                    )
-                with col_r3:
-                    st.metric(
-                        "Frequência",
-                        f"{result.frequency_hz:.1f}",
-                        "Hz"
-                    )
-                with col_r4:
-                    st.metric(
-                        "H₀",
-                        f"{result.surface_magnetic_field_a_per_m:.2f}",
-                        "A/m"
-                    )
-                
-                st.divider()
-                st.markdown("### Perdas [W/m²] - Comparação dos 3 Tipos")
-                
-                loss_data = {
-                    "Tipo de Condutor": [
-                        "Circular",
-                        "Retangular (a) - Simétrico",
-                        "Retangular (b) - Semi-infinito [BASE]",
-                        "Retangular (c) - Finito",
-                        "Folha - Semi-infinito",
-                        "Folha - Espessura Finita"
-                    ],
-                    "Perda [W/m²]": [
-                        f"{result.circular_conductor_loss_w_per_m2:.4e}",
-                        f"{result.rectangular_variant_a_loss_w_per_m2:.4e}",
-                        f"{result.rectangular_variant_b_loss_w_per_m2:.4e}",
-                        f"{result.rectangular_variant_c_loss_w_per_m2:.4e}",
-                        f"{result.sheet_semi_infinite_loss_w_per_m2:.4e}",
-                        f"{result.sheet_finite_loss_w_per_m2:.4e}",
-                    ],
-                    "Relativo a Rect(b)": [
-                        f"{result.ratio_circular_to_rect_b:.4f}×",
-                        f"{result.ratio_rect_a_to_b:.4f}×",
-                        "1.0000×",
-                        f"{result.ratio_rect_c_to_b:.4f}×",
-                        f"{result.ratio_sheet_semi_to_rect_b:.4f}×",
-                        f"{result.ratio_sheet_finite_to_rect_b:.4f}×",
-                    ]
-                }
-                
-                df_losses = __import__("pandas").DataFrame(loss_data)
-                st.dataframe(df_losses, use_container_width=True)
-                
-                st.divider()
-                st.markdown("### Densidade de Corrente Máxima [A/m²]")
-                
-                j_data = {
-                    "Tipo": ["Circular", "Retangular (a)", "Folha"],
-                    "J_max [A/m²]": [
-                        f"{result.max_current_density_circular_a_per_m2:.4e}",
-                        f"{result.max_current_density_rectangular_a_per_m2:.4e}",
-                        f"{result.max_current_density_sheet_a_per_m2:.4e}",
-                    ]
-                }
-                df_j = __import__("pandas").DataFrame(j_data)
-                st.dataframe(df_j, use_container_width=True)
-                
-                st.divider()
-                st.markdown("### Interpretação Física")
-                st.info(result.notes)
-                
-            except Exception as e:
-                st.error(f"Erro no cálculo: {str(e)}")
-
-    with tab_comparison:
-        st.markdown("#### Figura: Visualização Comparativa")
-        st.info("Tabelas comparativas gerando...")
-        
-        try:
-            # Usar dados padrão para visualização
-            comparison = compare_conductor_geometries(
-                surface_magnetic_field_h0_a_per_m=6.0,
-                conductivity_s_per_m=5.8e7,
-                frequency_hz=60,
-                characteristic_dimension_m=0.025,
-            )
-            
-            # Criar tabela de comparação
-            comp_data = {
-                "Geometria": [
-                    comparison["rectangular_symmetric"]["type"],
-                    comparison["sheet_semi_infinite"]["type"],
-                    comparison["sheet_finite"]["type"],
-                ],
-                "Perda [W/m²]": [
-                    f"{comparison['rectangular_symmetric']['power_loss_w_per_m2']:.4e}",
-                    f"{comparison['sheet_semi_infinite']['power_loss_w_per_m2']:.4e}",
-                    f"{comparison['sheet_finite']['power_loss_w_per_m2']:.4e}",
-                ],
-                "Fator": [
-                    f"{comparison['rectangular_symmetric']['factor']:.6f}",
-                    f"{comparison['sheet_semi_infinite']['factor']:.6f}",
-                    f"{comparison['sheet_finite']['factor']:.6f}",
-                ],
-                "Relativo": [
-                    f"{comparison['rectangular_symmetric']['relative_to_baseline']:.4f}×",
-                    f"{comparison['sheet_semi_infinite']['relative_to_baseline']:.4f}×",
-                    f"{comparison['sheet_finite']['relative_to_baseline']:.4f}×",
-                ]
-            }
-            
-            df_comp = __import__("pandas").DataFrame(comp_data)
-            st.dataframe(df_comp, use_container_width=True)
-            
-            st.markdown("**Condições:** H₀=6.0 A/m, σ=5.8e7 S/m, b=2.5cm, f=60Hz, δ=8.53mm")
-            
-        except Exception as e:
-            st.warning(f"Não foi possível gerar figuras: {str(e)}")
-
-
-
 def show_assessment_01_page() -> None:
     """Pagina agregadora da Avaliacao 1 com estrutura por questao."""
     st.markdown("## Avaliação 1")
@@ -1235,6 +1080,252 @@ def show_assessment_01_page() -> None:
         _show_assessment_q5_tab()
 
 
+def _show_assessment_q5_tab() -> None:
+    """Questao 5: Comparacao de metodos analiticos (Kaymak et al. 2016)."""
+    st.markdown("### Questão 5: Comparação de Métodos Analíticos para AC Resistance")
+    st.caption(
+        "Enunciado: Implementar equações de perdas em condutores circulares, retangulares "
+        "e tipo folha a partir do artigo de referência."
+    )
+    st.info(
+        "**Referência Principal**: Kaymak, M., Shen, Z., & De Doncker, R. W. (2016). "
+        "\"Comparison of Analytical Methods for Calculating the AC Resistance and Leakage "
+        "Inductance of Medium-Frequency Transformers\". "
+        "IEEE Transactions on Industry Applications, 52(5), 3963–3972."
+    )
+    
+    # Abas para teoria e cálculo
+    tab_theory, tab_calculation, tab_comparison = st.tabs(
+        ["Teoria & Métodos", "Cálculo Comparativo", "Resultados"]
+    )
+    
+    with tab_theory:
+        st.markdown("#### Referências do Artigo Kaymak et al. 2016")
+        
+        st.markdown("**Profundidade de Penetração (Skin Depth)**")
+        st.markdown("Equação (1), página 2:")
+        st.latex(r"\delta = \sqrt{\frac{1}{\pi\mu\sigma f}}")
+        
+        st.markdown("**Fator de Resistência AC**")
+        st.markdown("Equação (2), página 2:")
+        st.latex(r"F_r = \frac{R_{ac}}{R_{dc}} = \frac{R_{ac}}{l_{MLT} \cdot m}{h_w \cdot d_w \cdot \sigma}")
+        
+        st.divider()
+        st.markdown("#### Seis Métodos Analíticos Comparados (Kaymak et al., Seção II)")
+        
+        col_m1, col_m2, col_m3 = st.columns(3)
+        
+        with col_m1:
+            st.subheader("Dowell 1")
+            st.markdown("Equações 5-6, página 2")
+            st.latex(r"F_{r,n} = \triangle'[\phi'_1 + \frac{2}{3}(m^2-1)\phi'_2]")
+            st.caption("Clássico, não contabiliza isolamento")
+        
+        with col_m2:
+            st.subheader("Dowell 2")
+            st.markdown("Equações 8-9, página 2")
+            st.latex(r"F_{r,n} = \triangle''[\phi''_1 + \frac{2}{3}(m^2-1)\phi''_2]")
+            st.caption("Melhor acurácia com η (porosidade)")
+        
+        with col_m3:
+            st.subheader("Ferreira 1")
+            st.markdown("Equação 10, página 2")
+            st.latex(r"F_{r,n} = \triangle''[\phi''_1 + \eta^2\frac{2}{3}(m^2-1)\phi''_2]")
+            st.caption("Competitivo para cilíndricos")
+        
+        col_m4, col_m5, col_m6 = st.columns(3)
+        
+        with col_m4:
+            st.subheader("Ferreira 2")
+            st.markdown("Equações 11-14, página 3")
+            st.latex(r"F_{r,n} = \frac{\gamma^2}{2}[\tau_1 - \frac{2\pi}{3}4(m^2-1)\tau_2]")
+            st.caption("Exato: funções de Kelvin")
+        
+        with col_m5:
+            st.subheader("Reatti")
+            st.markdown("Equação 15, página 3")
+            st.latex(r"F_{r,n} = \frac{\gamma^2}{2}[\tau_1 - \frac{2\pi\eta}{2}(...)\tau_2]")
+            st.caption("Ferreira modificado")
+        
+        with col_m6:
+            st.subheader("Dimitrakakis")
+            st.markdown("Equações 16-19, página 3")
+            st.latex(r"F_r = \triangle[...]")
+            st.caption("FEM-based, menos portátil")
+        
+        st.divider()
+        st.markdown("#### Três Geometrias de Condutores")
+        
+        col_g1, col_g2, col_g3 = st.columns(3)
+        
+        with col_g1:
+            st.subheader("Circular")
+            st.markdown("Ferreira 2 (Bessel)")
+            st.latex(r"P_{circ} \approx \frac{H_0^2}{\sigma\delta}")
+            st.caption("Coordenadas cilíndricas")
+        
+        with col_g2:
+            st.subheader("Retangular (3 variantes)")
+            st.markdown("Dowell (Eq. 5, 8, 9)")
+            st.latex(r"P_a = (H_0^2/\sigma\delta)\tanh(b/\delta)")
+            st.latex(r"P_b = H_0^2/\sigma\delta")
+            st.latex(r"P_c = (H_0^2/\sigma\delta)\coth(b/\delta)")
+            st.caption("Diferentes BC")
+        
+        with col_g3:
+            st.subheader("Sheet (Folha)")
+            st.markdown("Baseado em Dowell")
+            st.latex(r"P_{sheet,\infty} = H_0^2/\sigma\delta")
+            st.latex(r"P_{sheet,t} = (H_0^2/\sigma\delta)\cdot[1-e^{-2t/\delta}]/2")
+            st.caption("Finito vs semi-inf")
+        
+        st.divider()
+        st.markdown("#### Resultado Principal (Kaymak et al., Seção IV)")
+        st.success(
+            "**Melhor Método**: Dowell 2 oferece a melhor acurácia em comparação com "
+            "FEM simulations e medições experimentais em ampla faixa de parâmetros. "
+            "Desvios típicos: ±10-20%.\n\n"
+            "**Erro Máximo**: Ocorre quando Δ (ptaxa de penetração) é grande, "
+            "η (porosidade) é pequeno, e m (camadas) é grande. "
+            "Veja Fig. 10-11 do artigo para mapas de erro."
+        )
+    
+    with tab_calculation:
+        st.markdown("#### Cálculo Comparativo Q5")
+        
+        col_c1, col_c2, col_c3 = st.columns(3)
+        
+        with col_c1:
+            st.markdown("**Geometria**")
+            char_dim_cm = st.number_input(
+                "Dimensão característica [cm]",
+                min_value=0.1,
+                value=2.5,
+                key="q5_char_dim"
+            )
+        
+        with col_c2:
+            st.markdown("**Material: Cobre**")
+            conductivity = st.number_input(
+                "Condutividade σ [S/m]",
+                min_value=1e6,
+                value=5.8e7,
+                format="%.2e",
+                key="q5_sigma"
+            )
+        
+        with col_c3:
+            st.markdown("**Operação**")
+            frequency = st.number_input(
+                "Frequência [Hz]",
+                min_value=1.0,
+                value=60.0,
+                key="q5_freq"
+            )
+        
+        col_c4, col_c5 = st.columns(2)
+        
+        with col_c4:
+            st.markdown("**Campo Magnético**")
+            h0_field = st.number_input(
+                "Campo H₀ [A/m]",
+                min_value=0.1,
+                value=6.0,
+                key="q5_h0"
+            )
+        
+        with col_c5:
+            st.markdown("**Permeabilidade Relativa**")
+            mu_rel = st.number_input(
+                "μᵣ (unitless)",
+                min_value=1.0,
+                value=1.0,
+                key="q5_mu_r"
+            )
+        
+        if st.button("Calcular Questão 5 (Kaymak et al.)", type="primary", key="q5_calc"):
+            try:
+                from app.core.exercises.q05_comparison_methods import solve_question_05_comparison
+                
+                result = solve_question_05_comparison(
+                    frequency_hz=frequency,
+                    surface_magnetic_field_h0_a_per_m=h0_field,
+                    characteristic_dimension_cm=char_dim_cm,
+                    conductivity_s_per_m=conductivity,
+                    permeability_rel=mu_rel,
+                    material_name="Cobre"
+                )
+                
+                st.session_state.q5_result = result
+                st.success("✓ Cálculo concluído!")
+            
+            except Exception as e:
+                st.error(f"Erro na execução: {str(e)}")
+    
+    with tab_comparison:
+        st.markdown("#### Resultados da Comparação")
+        
+        if "q5_result" in st.session_state:
+            result = st.session_state.q5_result
+            
+            st.markdown("**Parâmetros Calculados**")
+            col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+            
+            with col_r1:
+                st.metric("Skin Depth (δ)", f"{result.skin_depth_mm:.3f} mm")
+            with col_r2:
+                st.metric("Penetration Ratio", f"{result.dimensionless_ratio:.4f}")
+            with col_r3:
+                st.metric("Frequência", f"{result.frequency_hz:.1f} Hz")
+            with col_r4:
+                st.metric("Condutividade", f"{result.conductivity_s_per_m:.2e} S/m")
+            
+            st.divider()
+            
+            st.markdown("**Comparação de Perdas [W/m²]**")
+            
+            comparison_data = {
+                "Geometria / Variante": [
+                    "Circular",
+                    "Retang. (a) Simétrico",
+                    "Retang. (b) Baseline",
+                    "Retang. (c) Finito",
+                    "Sheet Semi-∞",
+                    "Sheet Finito"
+                ],
+                "Perda [W/m²]": [
+                    result.circular_conductor_loss_w_per_m2,
+                    result.rectangular_variant_a_loss_w_per_m2,
+                    result.rectangular_variant_b_loss_w_per_m2,
+                    result.rectangular_variant_c_loss_w_per_m2,
+                    result.sheet_semi_infinite_loss_w_per_m2,
+                    result.sheet_finite_loss_w_per_m2
+                ],
+                "Relativo a Rect(b)": [
+                    result.ratio_circular_to_rect_b,
+                    result.ratio_rect_a_to_b,
+                    1.0,
+                    result.ratio_rect_c_to_b,
+                    result.ratio_sheet_semi_to_rect_b,
+                    result.ratio_sheet_finite_to_rect_b
+                ]
+            }
+            
+            df = __import__("pandas").DataFrame(comparison_data)
+            st.dataframe(df, use_container_width=True)
+            
+            st.divider()
+            
+            st.markdown("**Interpretação Física**")
+            st.markdown(result.notes)
+        
+        else:
+            st.info("Execute o cálculo na aba 'Cálculo Comparativo' para ver os resultados.")
+
+
+
+
+
 def main():
     """Funcao principal da aplicacao."""
     # Navegacao lateral
@@ -1244,13 +1335,12 @@ def main():
 
     page = st.sidebar.radio(
         "Navegação",
-        options=["Início", "Avaliação 1"],
+        options=[ "Avaliação 1"],
         index=0,
     )
 
-    if page == "Início":
-        show_home_page()
-    elif page == "Avaliação 1":
+
+    if page == "Avaliação 1":
         show_assessment_01_page()
 
 
@@ -1356,7 +1446,7 @@ def show_exercise_01_page(biot_only: bool = False):
         st.session_state.calculated_input = None
 
     if "material_preset" not in st.session_state:
-        st.session_state.material_preset = "Aco transformador (tanque)"
+        st.session_state.material_preset = "Aco carbono"
 
     if "im_a" not in st.session_state:
         first_current = (
@@ -1627,7 +1717,7 @@ def show_exercise_01_page(biot_only: bool = False):
         col_biot, col_h, col_loss = st.columns(3)
         with col_biot:
             st.metric(
-                "**Perda (Biot-Savart)**",
+                "**Perda**",
                 f"{result.total_loss_approximate_w:.2f}",
                 "W",
                 help="Método Biot-Savart com integração numérica",
@@ -1642,7 +1732,7 @@ def show_exercise_01_page(biot_only: bool = False):
 
         with col_analytical:
             st.metric(
-                "**Perda (Analítico)**",
+                "**Perda**",
                 f"{result.total_loss_analytical_w:.2f}",
                 "W",
                 help="Fórmula analítica exata para geometria cilíndrica",
@@ -1688,27 +1778,7 @@ def show_exercise_01_page(biot_only: bool = False):
                 st.write(f"σ = {calc_input.material.sigma:.6e} S/m")
                 st.write(f"c = {analytical_details['thickness_m']*1000:.3f} mm")
 
-            st.write(f"Resultado analítico = {result.total_loss_analytical_w:.2f} W")
-
-    with st.expander("Método aproximado (Biot-Savart)", expanded=False):
-        st.latex(
-            r"H_m(x,y)=\frac{I_m a}{2\pi}"
-            r"\sqrt{\frac{3x^2+3y^2+a^2}{(x^2+y^2)(x^4+y^4+2x^2y^2-2a^2x^2+2a^2y^2+a^4)}}"
-        )
-        st.latex(
-            r"P = \frac{1}{2\pi}\sqrt{\frac{\omega\mu}{2\sigma}}\iint |H_m(x,y)|^2\,dx\,dy"
-        )
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            if biot_details["a_mm"] is not None:
-                st.write(f"a = {biot_details['a_mm']:.3f} mm")
-            st.write(f"x = {biot_details['plate_x_mm']:.3f} mm")
-            st.write(f"y = {biot_details['plate_y_mm']:.3f} mm")
-            st.write(f"Im = {biot_details['im_rms_a']:.2f} A")
-            st.write(f"ω = {biot_details['omega_rad_s']:.4f} rad/s")
-
-
-        st.write(f"Resultado Biot-Savart = {result.total_loss_approximate_w:.2f} W")
+            st.write(f"Resultado= {result.total_loss_analytical_w:.2f} W")
 
     st.divider()
 

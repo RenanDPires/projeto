@@ -87,9 +87,14 @@ FIELD_CALCULATION_TOLERANCE = 1e-9
 # Referencias de condutividade e permeabilidade: tabelas publicas tecnicas.
 MATERIAL_PRESETS = OrderedDict(
     {
-        "Aco transformador (tanque)": {
+        "Aco silício": {
             "mu": 1.256637e-4,
             "sigma": 1.0e6,
+            "description": "Aco elétrico do tanque do transformador (mu_r ≈ 100)",
+        },
+        "Aco carbono": {
+            "mu": 6.283185e-4,
+            "sigma": 2.0e7,
             "description": "Aco elétrico do tanque do transformador (mu_r ≈ 100)",
         },
         "Cobre (Cu)": {

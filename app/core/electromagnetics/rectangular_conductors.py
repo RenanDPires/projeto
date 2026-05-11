@@ -235,9 +235,9 @@ def create_q4_power_loss_comparison():
             values=[
                 ['(a)', '(b)', '(c)'],
                 [
-                    'Campo em ambas<br/>superfícies',
-                    'Campo em uma<br/>superfície',
-                    'Espaço finito<br/>(sanduíche)'
+                    'Campo em ambas superfícies',
+                    'Campo em uma superfície',
+                    'Espaço finito (sanduíche)'
                 ],
                 [
                     'H₀²/(σδ) · tanh(b/δ)',
