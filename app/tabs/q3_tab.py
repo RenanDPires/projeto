@@ -51,7 +51,7 @@ def render_q3_tab(
     st.markdown("### Questão 3: Campo magnético H(x,y) e perdas na tampa com 3 furos")
     st.caption(
         "Enunciado: calcular perdas para 2000 A, 2250 A, 2500 A e 2800 A em 60 Hz, "
-        "com aço carbono (sigma=2e7 S/m, mu_r=500). Método: Biot-Savart."
+        "com aço carbono (sigma=2e7 S/m, mu_r=500)."
     )
 
     base_input = get_default_exercise01_input()
@@ -224,65 +224,61 @@ def render_q3_tab(
     with col_3d_3:
         q3_3d_hole_max = st.number_input("Diâmetro máx dos furos para 3D [mm]", min_value=10.0, value=max(100.0, float(q3_hole_diameter) * 1.5), step=5.0, key="q3_3d_hole_max")
 
-    q3_show_3d = st.toggle("Gerar superfícies 3D da Q3", value=False, key="q3_show_3d")
-    if not q3_show_3d:
-        st.info("Ative 'Gerar superfícies 3D da Q3' para visualizar as superfícies Biot-Savart.")
-    else:
-        q3_current_3d = np.linspace(0.0, float(q3_3d_current_max), 5)
-        q3_freq_3d = np.linspace(0.1, float(q3_3d_freq_max), 5)
-        q3_hole_3d = np.linspace(float(q3_hole_diameter), float(q3_3d_hole_max), 5)
+    q3_current_3d = np.linspace(0.0, float(q3_3d_current_max), 5)
+    q3_freq_3d = np.linspace(0.1, float(q3_3d_freq_max), 5)
+    q3_hole_3d = np.linspace(float(q3_hole_diameter), float(q3_3d_hole_max), 5)
 
-        q3_surface_current_freq = np.zeros((len(q3_freq_3d), len(q3_current_3d)))
-        q3_surface_current_hole = np.zeros((len(q3_hole_3d), len(q3_current_3d)))
+    q3_surface_current_freq = np.zeros((len(q3_freq_3d), len(q3_current_3d)))
+    q3_surface_current_hole = np.zeros((len(q3_hole_3d), len(q3_current_3d)))
 
-        for i, freq_val in enumerate(q3_freq_3d):
-            for j, current_val in enumerate(q3_current_3d):
-                q3_input_sf = q3_custom_input.model_copy(
-                    update={
-                        "frequency_hz": float(freq_val),
-                        "material": MaterialInput(mu=q3_3d_mu, sigma=q3_3d_sigma),
-                        "conductors": apply_im_to_conductors(q3_custom_input.conductors, float(current_val)),
-                        "mesh": MeshInput(nx=80, ny=80),
-                    }
-                )
-                q3_res_sf = simulate_exercise_03_biot_only(q3_input_sf)
-                q3_surface_current_freq[i, j] = float(q3_res_sf["total_loss_biot_w"])
+    for i, freq_val in enumerate(q3_freq_3d):
+        for j, current_val in enumerate(q3_current_3d):
+            q3_input_sf = q3_custom_input.model_copy(
+                update={
+                    "frequency_hz": float(freq_val),
+                    "material": MaterialInput(mu=q3_3d_mu, sigma=q3_3d_sigma),
+                    "conductors": apply_im_to_conductors(q3_custom_input.conductors, float(current_val)),
+                    "mesh": MeshInput(nx=80, ny=80),
+                }
+            )
+            q3_res_sf = simulate_exercise_03_biot_only(q3_input_sf)
+            q3_surface_current_freq[i, j] = float(q3_res_sf["total_loss_biot_w"])
 
-        for i, hole_val in enumerate(q3_hole_3d):
-            for j, current_val in enumerate(q3_current_3d):
-                q3_input_sh = q3_custom_input.model_copy(
-                    update={
-                        "frequency_hz": float(q3_frequency),
-                        "material": MaterialInput(mu=q3_3d_mu, sigma=q3_3d_sigma),
-                        "conductors": apply_im_to_conductors(q3_custom_input.conductors, float(current_val)),
-                        "holes": [
-                            HoleInput(x_mm=100.0, y_mm=135.0, diameter_mm=float(hole_val)),
-                            HoleInput(x_mm=295.0, y_mm=135.0, diameter_mm=float(hole_val)),
-                            HoleInput(x_mm=490.0, y_mm=135.0, diameter_mm=float(hole_val)),
-                        ],
-                        "mesh": MeshInput(nx=80, ny=80),
-                    }
-                )
-                q3_res_sh = simulate_exercise_03_biot_only(q3_input_sh)
-                q3_surface_current_hole[i, j] = float(q3_res_sh["total_loss_biot_w"])
+    for i, hole_val in enumerate(q3_hole_3d):
+        for j, current_val in enumerate(q3_current_3d):
+            q3_input_sh = q3_custom_input.model_copy(
+                update={
+                    "frequency_hz": float(q3_frequency),
+                    "material": MaterialInput(mu=q3_3d_mu, sigma=q3_3d_sigma),
+                    "conductors": apply_im_to_conductors(q3_custom_input.conductors, float(current_val)),
+                    "holes": [
+                        HoleInput(x_mm=100.0, y_mm=135.0, diameter_mm=float(hole_val)),
+                        HoleInput(x_mm=295.0, y_mm=135.0, diameter_mm=float(hole_val)),
+                        HoleInput(x_mm=490.0, y_mm=135.0, diameter_mm=float(hole_val)),
+                    ],
+                    "mesh": MeshInput(nx=80, ny=80),
+                }
+            )
+            q3_res_sh = simulate_exercise_03_biot_only(q3_input_sh)
+            q3_surface_current_hole[i, j] = float(q3_res_sh["total_loss_biot_w"])
 
-        fig_q3_3d_cf = go.Figure(data=[go.Surface(x=q3_current_3d, y=q3_freq_3d, z=q3_surface_current_freq, colorscale="Viridis", showscale=True)])
-        fig_q3_3d_cf.update_layout(
-            title="Q3 3D: Perdas por Corrente × Frequência (Biot-Savart)",
-            height=560,
-            margin={"l": 0, "r": 0, "t": 50, "b": 0},
-            scene={"xaxis_title": "Corrente Im [A]", "yaxis_title": "Frequência [Hz]", "zaxis_title": "Perdas [W]"},
-        )
-        plotly_chart_with_csv(fig_q3_3d_cf, "q3_fig_3d_cf", "q3_perdas_3d_corrente_frequencia.csv")
+    fig_q3_3d_cf = go.Figure(data=[go.Surface(x=q3_current_3d, y=q3_freq_3d, z=q3_surface_current_freq, colorscale="Viridis", showscale=True)])
+    fig_q3_3d_cf.update_layout(
+        title="Q3 3D: Perdas por Corrente × Frequência (Biot-Savart)",
+        height=560,
+        margin={"l": 0, "r": 0, "t": 50, "b": 0},
+        scene={"xaxis_title": "Corrente Im [A]", "yaxis_title": "Frequência [Hz]", "zaxis_title": "Perdas [W]"},
+    )
+    plotly_chart_with_csv(fig_q3_3d_cf, "q3_fig_3d_cf", "q3_perdas_3d_corrente_frequencia.csv")
 
-        fig_q3_3d_ch = go.Figure(data=[go.Surface(x=q3_current_3d, y=q3_hole_3d, z=q3_surface_current_hole, colorscale="Viridis", showscale=True)])
-        fig_q3_3d_ch.update_layout(
-            title="Q3 3D: Perdas por Corrente × Diâmetro dos Furos (Biot-Savart)",
-            height=560,
-            margin={"l": 0, "r": 0, "t": 50, "b": 0},
-            scene={"xaxis_title": "Corrente Im [A]", "yaxis_title": "Diâmetro dos furos [mm]", "zaxis_title": "Perdas [W]"},
-        )
-        plotly_chart_with_csv(fig_q3_3d_ch, "q3_fig_3d_ch", "q3_perdas_3d_corrente_furo.csv")
+    fig_q3_3d_ch = go.Figure(data=[go.Surface(x=q3_current_3d, y=q3_hole_3d, z=q3_surface_current_hole, colorscale="Viridis", showscale=True)])
+    fig_q3_3d_ch.update_layout(
+        title="Q3 3D: Perdas por Corrente × Diâmetro dos Furos (Biot-Savart)",
+        height=560,
+        margin={"l": 0, "r": 0, "t": 50, "b": 0},
+        scene={"xaxis_title": "Corrente Im [A]", "yaxis_title": "Diâmetro dos furos [mm]", "zaxis_title": "Perdas [W]"},
+    )
+    plotly_chart_with_csv(fig_q3_3d_ch, "q3_fig_3d_ch", "q3_perdas_3d_corrente_furo.csv")
 
     st.divider()
     st.markdown("#### 4. Heatmaps 2D Sobre a Tampa")

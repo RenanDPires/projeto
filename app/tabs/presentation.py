@@ -10,7 +10,7 @@ def render_home_page() -> None:
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="subtitle">Métodos computacionais, tecnologias e bibliotecas utilizadas no Eletromag Lab</div>',
+        '<div class="subtitle">Metodos computacionais, tecnologias e bibliotecas utilizadas em EEL7216 08202 Topicos Especiais Eletron.pot.e Acion. IV</div>',
         unsafe_allow_html=True,
     )
 
@@ -38,9 +38,9 @@ def render_home_page() -> None:
     st.markdown("#### Questão 3")
     st.write(
         """
-        - Simulação numérica com método Biot-Savart na geometria com 3 furos.
+        - Simulação numérica na geometria com 3 furos.
         - Varreduras paramétricas em frequência e corrente para múltiplos materiais.
-        - Superfícies 3D de perdas variando pares de grandezas (método Biot-Savart).
+        - Superfícies 3D de perdas variando pares de grandezas.
         - Mapas regionais de campo e perdas (malha computacional + integração por região).
         """
     )
@@ -58,6 +58,29 @@ def render_home_page() -> None:
         """
         - Comparação de métodos analíticos para resistência AC (referência Kaymak et al.).
         - Estudo comparativo por geometria, material e varreduras em X.
+        """
+    )
+
+    st.divider()
+
+    st.markdown("### Detalhamento Numérico e Gráfico")
+    st.write(
+        """
+        - Formulação física predominante: regime harmônico quase-estático em eletromagnetismo.
+        - EDO/PDE: não há solver genérico de EDO implementado; a Questão 2 apresenta dedução analítica
+          da equação de difusão e relações constitutivas, sem integração temporal numérica.
+        - Integração numérica (Q1): quadratura de Gauss-Legendre na espessura para agregação volumétrica
+          de campo e perdas (atenuação exponencial no modelo de pele).
+        - Discretização espacial (Q1/Q3): malhas 2D uniformes em XY para avaliação de H, J e perdas,
+          com mascaramento geométrico (anéis/furos) e agregação por células regionais.
+        - Integração por área (Q1/Q3): soma discreta de densidade de perdas por elemento de área
+          (Riemann em malha cartesiana), convertendo W/m2 para perdas integradas em W.
+        - Biot-Savart numérico (Q3): superposição vetorial de contribuições dos condutores em cada nó
+          da malha, seguida de pós-processamento para mapas de campo e potência dissipada.
+        - Varreduras paramétricas: geração de eixos linear/log, amostragem multi-ponto e cálculo
+          repetido de métricas para curvas 2D e superfícies 3D.
+        - Visualização científica: superfícies 3D, heatmaps regionais e curvas multi-traço com exportação
+          de dados por trace para CSV, permitindo auditoria dos resultados.
         """
     )
 

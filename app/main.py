@@ -1,4 +1,4 @@
-"""Aplicacao principal do Eletromag Lab em Streamlit.
+"""Aplicacao principal da disciplina EEL7216 em Streamlit.
 
 Ponto de entrada da interface para simulacoes de eletromagnetismo.
 Execute com:
@@ -45,17 +45,17 @@ from app.core.electromagnetics.biot_savart import calculate_loss_analytical
 from app.core.geometry.validation import GeometricValidator
 from app.core.geometry.plate import create_plate_from_input
 from app.components.geometry_plot import plot_geometry
-from app.pages.q1_tab import render_q1_tab
-from app.pages.q2_tab import render_q2_tab
-from app.pages.q3_tab import render_q3_tab
-from app.pages.q4_tab import render_q4_tab
-from app.pages.q5_tab import render_q5_tab
-from app.pages.presentation import render_home_page
+from app.tabs.q1_tab import render_q1_tab
+from app.tabs.q2_tab import render_q2_tab
+from app.tabs.q3_tab import render_q3_tab
+from app.tabs.q4_tab import render_q4_tab
+from app.tabs.q5_tab import render_q5_tab
+from app.tabs.presentation import render_home_page
 
 # Configuracao da pagina Streamlit
 st.set_page_config(
-    page_title="Eletromag Lab",
-    page_icon=None,
+    page_title="EEL7216 08202 Topicos Especiais Eletron.pot.e Acion. IV",
+    page_icon= "⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -301,7 +301,7 @@ def _build_exercise_01_pdf(
     # Capa e resumo
     y = page_h - margin
     c.setFont("Helvetica-Bold", 18)
-    c.drawString(margin, y, "Eletromag - Exercicio 1")
+    c.drawString(margin, y, "EEL7216 08202 - Exercicio 1")
     y -= 26
     c.setFont("Helvetica", 10)
     c.drawString(margin, y, f"Gerado em: {datetime.utcnow().isoformat(timespec='seconds')}Z")
@@ -456,7 +456,7 @@ def _build_analytical_details(input_data: Exercise01Input) -> dict:
 
 
 def _build_biot_details(input_data: Exercise01Input) -> dict:
-    """Calcula valores intermediarios usados no metodo Biot-Savart."""
+    """Calcula valores intermediarios usados no metodo analítico."""
     im_rms = (
         float(np.mean(np.abs([c.current_a for c in input_data.conductors])))
         if input_data.conductors
@@ -763,7 +763,7 @@ def _get_q3_material_options() -> list[dict]:
 
 
 def _extract_q3_metric_value(result: dict, metric_key: str) -> float:
-    """Extrai grandeza escalar da simulacao Biot-Savart da Q3."""
+    """Extrai grandeza escalar da simulacao analítica da Q3."""
     metric_map = {
         "loss_w": float(result["total_loss_biot_w"]),
         "h_max": float(result["max_h_field"]),
@@ -1366,7 +1366,7 @@ def _show_assessment_q3_tab() -> None:
     st.markdown("### Questão 3: Campo magnético H(x,y) e perdas na tampa com 3 furos")
     st.caption(
         "Enunciado: calcular perdas para 2000 A, 2250 A, 2500 A e 2800 A em 60 Hz, "
-        "com aço carbono (sigma=2e7 S/m, mu_r=500). Método: Biot-Savart."
+        "com aço carbono (sigma=2e7 S/m, mu_r=500)."
     )
 
     base_input = get_default_exercise01_input()
@@ -1572,7 +1572,7 @@ def _show_assessment_q3_tab() -> None:
     st.divider()
     st.markdown("#### 3. Gráficos 3D - Superfícies Biot-Savart")
     st.caption(
-        "Superfícies numéricas calculadas com o método Biot-Savart, variando duas grandezas de entrada "
+        "Superfícies numéricas calculadas, variando duas grandezas de entrada "
         "para obter a perda total na tampa com 3 furos."
     )
 
@@ -1614,7 +1614,7 @@ def _show_assessment_q3_tab() -> None:
 
     q3_show_3d = st.toggle("Gerar superfícies 3D da Q3", value=False, key="q3_show_3d")
     if not q3_show_3d:
-        st.info("Ative 'Gerar superfícies 3D da Q3' para visualizar as superfícies Biot-Savart.")
+        st.info("Ative 'Gerar superfícies 3D da Q3' para visualizar as superfícies.")
     else:
         q3_current_3d = np.linspace(0.0, float(q3_3d_current_max), 5)
         q3_freq_3d = np.linspace(0.1, float(q3_3d_freq_max), 5)
@@ -2276,13 +2276,14 @@ def _show_assessment_q5_tab() -> None:
 def main():
     """Funcao principal da aplicacao."""
     # Navegacao lateral
-    st.sidebar.markdown("# Eletromag Lab")
-    st.sidebar.markdown("Laboratório visual de eletromagnetismo")
+    st.sidebar.markdown("# EEL7216 08202")
+    st.sidebar.markdown("Topicos Especiais Eletron.pot.e Acion. IV")
+    st.sidebar.markdown("Aluno: Renan Duarte Pires")
     st.sidebar.divider()
 
     page = st.sidebar.radio(
         "Navegação",
-        options=["Avaliação 1", "Apresentação"],
+        options=["Apresentação", "Avaliação 1"],
         index=0,
     )
 
