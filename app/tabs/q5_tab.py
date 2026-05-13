@@ -7,7 +7,6 @@ from typing import Callable
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
 
 from app.schemas import get_material_presets
 
@@ -453,66 +452,6 @@ def render_q5_tab(
 
                     plotly_chart_with_csv(fig_freq, "q5_fig_freq", "q5_varredura_frequencia.csv")
                     plotly_chart_with_csv(fig_current, "q5_fig_current", "q5_varredura_corrente.csv")
-
-                    material_x_sigma = [float(m["sigma"]) for m in selected_material_data]
-                    material_x_mu = [float(m["mu_rel"]) for m in selected_material_data]
-                    material_y = []
-                    for material in selected_material_data:
-                        res_mat = solve_question_05_comparison(
-                            frequency_hz=float(q5_base_inputs["frequency"]),
-                            surface_magnetic_field_h0_a_per_m=float(q5_base_inputs["h0_field"]),
-                            characteristic_dimension_cm=float(q5_base_inputs["char_dim_cm"]),
-                            conductivity_s_per_m=float(material["sigma"]),
-                            permeability_rel=float(material["mu_rel"]),
-                            material_name=material["name"],
-                        )
-                        material_y.append(_extract_q5_metric_value(res_mat, metric_key))
-
-                    fig_material_props = make_subplots(
-                        rows=1,
-                        cols=2,
-                        subplot_titles=("Variação com condutividade σ", "Variação com permeabilidade relativa μr"),
-                    )
-                    fig_material_props.add_trace(
-                        go.Scatter(
-                            x=material_x_sigma,
-                            y=material_y,
-                            mode="markers+lines",
-                            text=[m["name"] for m in selected_material_data],
-                            name="σ",
-                        ),
-                        row=1,
-                        col=1,
-                    )
-                    fig_material_props.add_trace(
-                        go.Scatter(
-                            x=material_x_mu,
-                            y=material_y,
-                            mode="markers+lines",
-                            text=[m["name"] for m in selected_material_data],
-                            name="μr",
-                        ),
-                        row=1,
-                        col=2,
-                    )
-                    fig_material_props.update_xaxes(title_text="σ [S/m]", row=1, col=1, type="log")
-                    fig_material_props.update_xaxes(title_text="μr [-]", row=1, col=2, type="log")
-                    fig_material_props.update_yaxes(title_text=metric_label, row=1, col=1)
-                    fig_material_props.update_yaxes(title_text=metric_label, row=1, col=2)
-                    fig_material_props.update_layout(
-                        title="Q5: Grandeza vs propriedades dos materiais",
-                        hovermode="closest",
-                        height=450,
-                        showlegend=False,
-                    )
-                    if log_scale_x:
-                        fig_material_props.update_xaxes(type="log", row=1, col=1)
-                        fig_material_props.update_xaxes(type="log", row=1, col=2)
-                    plotly_chart_with_csv(
-                        fig_material_props,
-                        "q5_fig_material_props",
-                        "q5_varredura_materiais.csv",
-                    )
 
         else:
             st.info("Execute o cálculo na aba 'Cálculo Comparativo' para ver os resultados.")
