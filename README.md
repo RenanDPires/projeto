@@ -122,6 +122,23 @@ black app tests
 mypy app tests
 ```
 
+## Deploy no Cloudflare Workers
+
+O app principal continua sendo Streamlit/Python e, por isso, não roda diretamente no runtime de Workers.
+Para publicação simples via GitHub + Cloudflare, o repositório agora inclui um scaffold estático em
+`cloudflare/` com `wrangler.toml`, worker de fallback e uma landing page para deploy.
+
+### Fluxo de deploy
+
+1. Crie um Worker no Cloudflare e gere um `CLOUDFLARE_API_TOKEN` com permissão de deploy.
+2. Salve `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN` como secrets do repositório no GitHub.
+3. Faça push para `main`.
+4. O workflow em `.github/workflows/deploy-cloudflare-workers.yml` publica o conteúdo estático de `cloudflare/public`.
+
+### Limitação importante
+
+Esse deploy entrega uma vitrine estática do projeto. Se a intenção for rodar a interface Streamlit completa no edge, será preciso uma reescrita da UI e da camada de cálculo para uma stack compatível com Workers.
+
 ## Referencias
 
 - Especificacao funcional: specs.md

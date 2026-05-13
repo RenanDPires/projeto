@@ -134,6 +134,12 @@ dmypy.json
 .streamlit/
 *.streamlit.json
 
+# Cloudflare Workers / Wrangler
+.wrangler/
+
+# Static deploy bundle
+cloudflare/.wrangler/
+
 # Local data
 data/
 outputs/
