@@ -1,4 +1,4 @@
-name = "eletromag-lab"
+name = "renan"
 main = "cloudflare/src/worker.js"
 compatibility_date = "2026-05-13"
 
