@@ -126,7 +126,8 @@ mypy app tests
 
 O app principal continua sendo Streamlit/Python e, por isso, não roda diretamente no runtime de Workers.
 Para publicação simples via GitHub + Cloudflare, o repositório agora inclui um scaffold estático em
-`cloudflare/` com `wrangler.toml`, worker de fallback e uma landing page para deploy.
+`cloudflare/` e um `wrangler.toml` na raiz do projeto. Com isso, o deploy pode ser feito sem path
+especial e sem parametro `--config`.
 
 ### Fluxo de deploy
 
@@ -134,6 +135,17 @@ Para publicação simples via GitHub + Cloudflare, o repositório agora inclui u
 2. Salve `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN` como secrets do repositório no GitHub.
 3. Faça push para `main`.
 4. O workflow em `.github/workflows/deploy-cloudflare-workers.yml` publica o conteúdo estático de `cloudflare/public`.
+
+### Campos do painel Cloudflare (Build)
+
+Se voce estiver configurando pelo painel de Build do Cloudflare, use:
+
+- Path: `/`
+- Build command: `echo "No build needed"` (ou vazio, se permitido)
+- Deploy command: `npx wrangler deploy`
+- Non-production branch deploy command: `npx wrangler deploy`
+
+Isso evita erro de arquivo ausente, pois o `wrangler.toml` fica na raiz.
 
 ### Limitação importante
 
