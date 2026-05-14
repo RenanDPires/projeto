@@ -8,43 +8,50 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
-from app.schemas import get_material_presets
 
-
-def _get_q5_material_options() -> list[dict]:
-    """Retorna materiais predefinidos para comparação da Q5 (base da Q3)."""
-    mu0 = 4.0 * np.pi * 1e-7
-    material_presets = get_material_presets()
-    materials = []
-    for name, values in material_presets.items():
-        if name == "Personalizado":
-            continue
-        mu = float(values["mu"])
-        sigma = float(values["sigma"])
-        mu_rel = mu / mu0
-        materials.append(
-            {
-                "name": name,
-                "mu": mu,
-                "sigma": sigma,
-                "mu_rel": mu_rel,
-            }
-        )
-    return materials
-
-
-def _extract_q5_metric_value(result, metric_key: str) -> float:
-    """Extrai uma grandeza escalar da saida da Q5 para graficos de varredura."""
-    metric_map = {
-        "rect_b_loss": float(result.rectangular_variant_b_loss_w_per_m2),
-        "rect_a_loss": float(result.rectangular_variant_a_loss_w_per_m2),
-        "rect_c_loss": float(result.rectangular_variant_c_loss_w_per_m2),
-        "circular_loss": float(result.circular_conductor_loss_w_per_m2),
-        "sheet_finite_loss": float(result.sheet_finite_loss_w_per_m2),
-        "sheet_semi_loss": float(result.sheet_semi_infinite_loss_w_per_m2),
-        "skin_depth_mm": float(result.skin_depth_mm),
+def _extract_q5_geometry_losses(result) -> dict[str, float]:
+    """Extrai perdas por geometria/variante para os gráficos da Q5."""
+    return {
+        "Circular": float(result.circular_conductor_loss_w_per_m2),
+        "Retang. (a) Simétrico": float(result.rectangular_variant_a_loss_w_per_m2),
+        "Retang. (b) Baseline": float(result.rectangular_variant_b_loss_w_per_m2),
+        "Retang. (c) Finito": float(result.rectangular_variant_c_loss_w_per_m2),
+        "Sheet Semi-∞": float(result.sheet_semi_infinite_loss_w_per_m2),
+        "Sheet Finito": float(result.sheet_finite_loss_w_per_m2),
     }
-    return metric_map[metric_key]
+
+
+def _build_q5_physical_interpretation(result) -> str:
+    """Gera um resumo curto e organizado para a seção de interpretação física."""
+    ranking = [
+        ("Retangular (a)", float(result.rectangular_variant_a_loss_w_per_m2)),
+        ("Retangular (b)", float(result.rectangular_variant_b_loss_w_per_m2)),
+        ("Retangular (c)", float(result.rectangular_variant_c_loss_w_per_m2)),
+        ("Sheet semi-infinito", float(result.sheet_semi_infinite_loss_w_per_m2)),
+        ("Sheet finito", float(result.sheet_finite_loss_w_per_m2)),
+        ("Circular", float(result.circular_conductor_loss_w_per_m2)),
+    ]
+    ranking_sorted = sorted(ranking, key=lambda item: item[1])
+
+    menor_nome, menor_valor = ranking_sorted[0]
+    maior_nome, maior_valor = ranking_sorted[-1]
+    fator_spread = maior_valor / menor_valor if menor_valor > 0 else float("inf")
+
+    return (
+        "**Resumo rápido**\n"
+        f"- Para este ponto de operação ({result.frequency_hz:.1f} Hz), a profundidade de penetração é "
+        f"{result.skin_depth_mm:.3f} mm e a razão geométrica é Δ = {result.dimensionless_ratio:.3f}.\n"
+        "- O caso retangular (b) é a referência de comparação (1.00x).\n"
+        f"- Menor perda no conjunto: **{menor_nome}** ({menor_valor:.3e} W/m²).\n"
+        f"- Maior perda no conjunto: **{maior_nome}** ({maior_valor:.3e} W/m²).\n"
+        f"- A diferença entre extremos é de aproximadamente **{fator_spread:.2f}x**.\n\n"
+        "**Leitura física dos resultados**\n"
+        "- Quando o campo fica mais confinado no condutor, a densidade de corrente tende a aumentar perto da superfície e as perdas sobem.\n"
+        "- Geometrias com maior liberdade de penetração do campo tendem a reduzir a perda média por área.\n"
+        "- As curvas por geometria mostram como a condição de contorno e a dimensão característica deslocam o regime de perda.\n\n"
+        "**Diretriz prática de projeto**\n"
+        "- Use este comparativo para pré-dimensionamento. Para decisão final em pontos críticos, valide com FEM ou medição."
+    )
 
 
 def render_q5_tab(
@@ -307,13 +314,13 @@ def render_q5_tab(
             st.divider()
 
             st.markdown("**Interpretação Física**")
-            st.markdown(result.notes)
+            st.markdown(_build_q5_physical_interpretation(result))
 
             st.divider()
-            st.markdown("### Varreduras em X por Material (base da Q3)")
+            st.markdown("### Varreduras por Geometria (base da Q5)")
             st.caption(
-                "Cada curva representa um material disponível no código. "
-                "Use os seletores para habilitar/desabilitar materiais na visualização."
+                "Cada curva representa uma geometria/variante da Questão 5, "
+                "mantendo o mesmo material e variando os parâmetros de operação e dimensão."
             )
 
             q5_base_inputs = st.session_state.get(
@@ -328,130 +335,115 @@ def render_q5_tab(
                 },
             )
 
-            material_options = _get_q5_material_options()
-            st.markdown("**Materiais habilitados**")
-            selected_material_data = []
-            material_cols = st.columns(3)
-            for idx, material in enumerate(material_options):
-                default_enabled = "Vacuo" not in material["name"]
-                with material_cols[idx % 3]:
-                    enabled = st.checkbox(
-                        material["name"],
-                        value=default_enabled,
-                        key=f"q5_material_enabled_{idx}",
-                    )
-                if enabled:
-                    selected_material_data.append(material)
-
-            if not selected_material_data:
-                st.warning("Selecione ao menos um material para gerar os gráficos de varredura.")
-            else:
-                metric_options = {
-                    "Perda Retangular (b) [W/m²]": "rect_b_loss",
-                    "Perda Retangular (a) [W/m²]": "rect_a_loss",
-                    "Perda Retangular (c) [W/m²]": "rect_c_loss",
-                    "Perda Circular [W/m²]": "circular_loss",
-                    "Perda Sheet Finito [W/m²]": "sheet_finite_loss",
-                    "Perda Sheet Semi-∞ [W/m²]": "sheet_semi_loss",
-                    "Skin Depth [mm]": "skin_depth_mm",
-                }
-                metric_label = st.selectbox(
-                    "Grandeza no eixo Y",
-                    options=list(metric_options.keys()),
-                    index=0,
-                    key="q5_metric_y",
+            col_sweep_1, col_sweep_2, col_sweep_3 = st.columns(3)
+            with col_sweep_1:
+                freq_min = st.number_input("f mín [Hz]", min_value=0.1, value=10.0, key="q5_freq_min")
+                freq_max = st.number_input("f máx [Hz]", min_value=1.0, value=500.0, key="q5_freq_max")
+            with col_sweep_2:
+                dim_min = st.number_input(
+                    "dimensão mín [cm]",
+                    min_value=0.05,
+                    value=0.5,
+                    key="q5_dim_min",
                 )
-                metric_key = metric_options[metric_label]
+                dim_max = st.number_input(
+                    "dimensão máx [cm]",
+                    min_value=0.1,
+                    value=6.0,
+                    key="q5_dim_max",
+                )
+            with col_sweep_3:
+                n_points = int(
+                    st.slider("Pontos por curva", min_value=8, max_value=60, value=24, key="q5_n_points")
+                )
+            log_scale_x = st.toggle("Escala log no eixo X", value=True, key="q5_log_x")
 
-                col_sweep_1, col_sweep_2, col_sweep_3 = st.columns(3)
-                with col_sweep_1:
-                    freq_min = st.number_input("f mín [Hz]", min_value=0.1, value=10.0, key="q5_freq_min")
-                    freq_max = st.number_input("f máx [Hz]", min_value=1.0, value=500.0, key="q5_freq_max")
-                with col_sweep_2:
-                    i_min = st.number_input("Im mín [A]", min_value=0.1, value=500.0, key="q5_i_min")
-                    i_max = st.number_input("Im máx [A]", min_value=1.0, value=5000.0, key="q5_i_max")
-                with col_sweep_3:
-                    n_points = int(
-                        st.slider("Pontos por curva", min_value=8, max_value=60, value=24, key="q5_n_points")
+            if freq_max <= freq_min:
+                st.warning("Ajuste a faixa de frequência: f máx deve ser maior que f mín.")
+            elif dim_max <= dim_min:
+                st.warning("Ajuste a faixa de dimensão: máximo deve ser maior que mínimo.")
+            else:
+                from app.core.exercises.q05_comparison_methods import solve_question_05_comparison
+
+                x_freq = build_sweep_axis(freq_min, freq_max, n_points, log_scale_x)
+                x_dim = build_sweep_axis(dim_min, dim_max, n_points, log_scale_x)
+
+                fig_freq = go.Figure()
+                fig_dim = go.Figure()
+
+                geometry_names = [
+                    "Circular",
+                    "Retang. (a) Simétrico",
+                    "Retang. (b) Baseline",
+                    "Retang. (c) Finito",
+                    "Sheet Semi-∞",
+                    "Sheet Finito",
+                ]
+                y_freq_map = {name: [] for name in geometry_names}
+                y_dim_map = {name: [] for name in geometry_names}
+
+                for f_hz in x_freq:
+                    res_f = solve_question_05_comparison(
+                        frequency_hz=float(f_hz),
+                        surface_magnetic_field_h0_a_per_m=float(q5_base_inputs["h0_field"]),
+                        characteristic_dimension_cm=float(q5_base_inputs["char_dim_cm"]),
+                        conductivity_s_per_m=float(q5_base_inputs["conductivity"]),
+                        permeability_rel=float(q5_base_inputs["mu_rel"]),
+                        material_name="Material base (Q5)",
                     )
-                log_scale_x = st.toggle("Escala log no eixo X", value=True, key="q5_log_x")
+                    loss_map = _extract_q5_geometry_losses(res_f)
+                    for geometry_name in geometry_names:
+                        y_freq_map[geometry_name].append(loss_map[geometry_name])
 
-                if freq_max <= freq_min:
-                    st.warning("Ajuste a faixa de frequência: f máx deve ser maior que f mín.")
-                elif i_max <= i_min:
-                    st.warning("Ajuste a faixa de corrente: Im máx deve ser maior que Im mín.")
-                else:
-                    from app.core.exercises.q05_comparison_methods import solve_question_05_comparison
+                for dim_cm in x_dim:
+                    res_dim = solve_question_05_comparison(
+                        frequency_hz=float(q5_base_inputs["frequency"]),
+                        surface_magnetic_field_h0_a_per_m=float(q5_base_inputs["h0_field"]),
+                        characteristic_dimension_cm=float(dim_cm),
+                        conductivity_s_per_m=float(q5_base_inputs["conductivity"]),
+                        permeability_rel=float(q5_base_inputs["mu_rel"]),
+                        material_name="Material base (Q5)",
+                    )
+                    loss_map = _extract_q5_geometry_losses(res_dim)
+                    for geometry_name in geometry_names:
+                        y_dim_map[geometry_name].append(loss_map[geometry_name])
 
-                    x_freq = build_sweep_axis(freq_min, freq_max, n_points, log_scale_x)
-                    x_current = build_sweep_axis(i_min, i_max, n_points, log_scale_x)
-
-                    fig_freq = go.Figure()
-                    fig_current = go.Figure()
-
-                    for material in selected_material_data:
-                        y_freq = []
-                        for f_hz in x_freq:
-                            res_f = solve_question_05_comparison(
-                                frequency_hz=float(f_hz),
-                                surface_magnetic_field_h0_a_per_m=float(q5_base_inputs["h0_field"]),
-                                characteristic_dimension_cm=float(q5_base_inputs["char_dim_cm"]),
-                                conductivity_s_per_m=float(material["sigma"]),
-                                permeability_rel=float(material["mu_rel"]),
-                                material_name=material["name"],
-                            )
-                            y_freq.append(_extract_q5_metric_value(res_f, metric_key))
-
-                        y_current = []
-                        for i_a in x_current:
-                            h0_scaled = float(q5_base_inputs["h0_field"]) * (
-                                float(i_a) / max(float(q5_base_inputs["i_ref_a"]), 1e-12)
-                            )
-                            res_i = solve_question_05_comparison(
-                                frequency_hz=float(q5_base_inputs["frequency"]),
-                                surface_magnetic_field_h0_a_per_m=h0_scaled,
-                                characteristic_dimension_cm=float(q5_base_inputs["char_dim_cm"]),
-                                conductivity_s_per_m=float(material["sigma"]),
-                                permeability_rel=float(material["mu_rel"]),
-                                material_name=material["name"],
-                            )
-                            y_current.append(_extract_q5_metric_value(res_i, metric_key))
-
-                        fig_freq.add_trace(
-                            go.Scatter(
-                                x=x_freq,
-                                y=y_freq,
-                                mode="lines",
-                                name=material["name"],
-                            )
+                for geometry_name in geometry_names:
+                    fig_freq.add_trace(
+                        go.Scatter(
+                            x=x_freq,
+                            y=y_freq_map[geometry_name],
+                            mode="lines",
+                            name=geometry_name,
                         )
-                        fig_current.add_trace(
-                            go.Scatter(
-                                x=x_current,
-                                y=y_current,
-                                mode="lines",
-                                name=material["name"],
-                            )
+                    )
+                    fig_dim.add_trace(
+                        go.Scatter(
+                            x=x_dim,
+                            y=y_dim_map[geometry_name],
+                            mode="lines",
+                            name=geometry_name,
                         )
-
-                    fig_freq.update_layout(
-                        title=f"Q5: {metric_label} vs Frequência (todos os materiais selecionados)",
-                        xaxis_title="Frequência [Hz]",
-                        yaxis_title=metric_label,
-                        hovermode="x unified",
-                        height=430,
                     )
-                    fig_current.update_layout(
-                        title=f"Q5: {metric_label} vs Corrente Im (H0 proporcional a Im)",
-                        xaxis_title="Corrente Im [A]",
-                        yaxis_title=metric_label,
-                        hovermode="x unified",
-                        height=430,
-                    )
-                    apply_log_x_axis([fig_freq, fig_current], log_scale_x)
 
-                    plotly_chart_with_csv(fig_freq, "q5_fig_freq", "q5_varredura_frequencia.csv")
-                    plotly_chart_with_csv(fig_current, "q5_fig_current", "q5_varredura_corrente.csv")
+                fig_freq.update_layout(
+                    title="Q5: Perdas por Geometria vs Frequência",
+                    xaxis_title="Frequência [Hz]",
+                    yaxis_title="Perda [W/m²]",
+                    hovermode="x unified",
+                    height=430,
+                )
+                fig_dim.update_layout(
+                    title="Q5: Perdas por Geometria vs Dimensão Característica",
+                    xaxis_title="Dimensão característica [cm]",
+                    yaxis_title="Perda [W/m²]",
+                    hovermode="x unified",
+                    height=430,
+                )
+                apply_log_x_axis([fig_freq, fig_dim], log_scale_x)
+
+                plotly_chart_with_csv(fig_freq, "q5_fig_freq_geo", "q5_varredura_geometria_frequencia.csv")
+                plotly_chart_with_csv(fig_dim, "q5_fig_dim_geo", "q5_varredura_geometria_dimensao.csv")
 
         else:
             st.info("Execute o cálculo na aba 'Cálculo Comparativo' para ver os resultados.")
