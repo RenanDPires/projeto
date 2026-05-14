@@ -1,17 +1,19 @@
 """Solução Analítica da Questão 4 - Condutores Retangulares de Cobre
 
-Referências:
-- Del Vecchio, R. M., "Transformer Design Principles", 
-  Seção 15.3.2.1 "Eddy Current Losses in the Coils" (página 426)
-  
-- Kulkarni, S. V., & Khaparde, S. A., "Transformer Engineering: Design, 
-  Technology, and Diagnostics", Seção 4.5.1 "Expression for the eddy loss" 
-  (página 150)
+Equação de difusão:  d²H/dx² = γ²H,  γ = √(jωμσ) = (1+j)/δ
+Solução geral:       H(x) = C1 cosh(γx) + C2 sinh(γx)
+Densidade corrente:  J(x) = -dH/dx
 
-Três variantes de condutores retangulares de cobre com largura 2b:
-(a) Campo aplicado em ambas as superfícies (simetria)
-(b) Campo aplicado em uma superfície (semi-espaço)
-(c) Espaço finito com ambas as superfícies limitadas (sanduíche)
+Três casos com H0 = campo na superfície, condutor de -b ≤ x ≤ b:
+
+  (a) H(-b) = H0, H(+b) = H0   → C2 = 0 → Ha = H0 cosh(γx)/cosh(γb)
+  (b) H(-b) = H0, H(+b) = -H0  → C1 = 0 → Hb = -H0 sinh(γx)/sinh(γb)
+  (c) H(-b) = H0, H(+b) = 0    → Hc = (Ha + Hb)/2
+
+Perdas (integração analítica com γ complexo, Δ = b/δ):
+  P_a = H0²/(σδ) × [sinh(2Δ) - sin(2Δ)] / [cosh(2Δ) + cos(2Δ)]
+  P_b = H0²/(σδ) × [sinh(2Δ) + sin(2Δ)] / [cosh(2Δ) - cos(2Δ)]
+  P_c = (P_a + P_b) / 4
 """
 
 import numpy as np
@@ -38,16 +40,16 @@ class Q4RectangularConductor(BaseModel):
     skin_depth_mm: float  # δ [mm]
     skin_depth_ratio_b_over_delta: float  # b/δ (razão)
     
-    # Variante (a): Ambas as superfícies com campo
+    # Variante (a): H(-b)=H0, H(+b)=H0 → simétrico
     variant_a_power_loss_w_per_m2: float
-    variant_a_hyperbolic_factor: float  # tanh(b/δ)
+    variant_a_factor: float  # [sinh(2Δ)-sin(2Δ)]/[cosh(2Δ)+cos(2Δ)]
     
-    # Variante (b): Uma superfície com campo (semi-espaço)
+    # Variante (b): H(-b)=H0, H(+b)=-H0 → antissimétrico
     variant_b_power_loss_w_per_m2: float
+    variant_b_factor: float  # [sinh(2Δ)+sin(2Δ)]/[cosh(2Δ)-cos(2Δ)]
     
-    # Variante (c): Espaço finito (sanduíche)
+    # Variante (c): H(-b)=H0, H(+b)=0 → assimétrico = (a+b)/4
     variant_c_power_loss_w_per_m2: float
-    variant_c_hyperbolic_factor: float  # 1/tanh(b/δ)
     
     # Campos e correntes induzidas
     max_current_density_var_a_a_per_m2: float  # Máximo de |J_x| em variante (a)
@@ -96,97 +98,71 @@ def solve_question_04_rectangular_conductors(
     
     # ─────────────────────────────────────────────────────────────────────────
     # Profundidade de penetração (skin depth)
-    # δ = √(2 / (ω μ σ))
+    # δ = √(1 / (π f μ σ))  ≡  √(2 / (ω μ σ))
     # ─────────────────────────────────────────────────────────────────────────
-    
-    delta_m = np.sqrt(2.0 / (omega * mu * conductivity_s_per_m))
+    delta_m = np.sqrt(1.0 / (np.pi * frequency_hz * mu * conductivity_s_per_m))
     delta_mm = delta_m * 1e3
     
-    # Razão adimensional b/δ
-    b_over_delta = b_m / delta_m
-    
+    # Razão adimensional Δ = b/δ
+    Delta = b_m / delta_m
+    two_Delta = 2.0 * Delta
+
     # ─────────────────────────────────────────────────────────────────────────
-    # VARIANTE (a): Ambas as superfícies com campo aplicado
-    # 
-    # Equação de difusão: ∇² H_z - (ωμσ/2)(1-j) H_z = 0
-    # 
-    # Coordenada: -b ≤ x ≤ b (condutor)
-    # Condição de contorno: H_z(±b) = H₀
-    # 
-    # Solução: H_z(x) = H₀ cosh(x/δ)
-    # Densidade de corrente: J_x(x) = σωμ H_z = σωμ H₀ sinh(x/δ) (com complexo)
-    # 
-    # Perdas por unidade de área:
-    # P_a = ∫_{-b}^{b} (|J_x|²/σ) dx = (H₀² / (σδ)) ∫_{-b}^{b} sinh²(x/δ) dx
-    #     = (H₀² / (σδ)) · [δ/2 · sinh(2b/δ) + b]  = H₀²/(σδ) · tanh(b/δ)
+    # Fator base  H0² / (σ δ)
     # ─────────────────────────────────────────────────────────────────────────
-    
-    tanh_factor_a = np.tanh(b_over_delta)
-    p_a_w_per_m2 = (surface_magnetic_field_h0_a_per_m ** 2) * (1.0 / (conductivity_s_per_m * delta_m)) * tanh_factor_a
-    
-    # Densidade de corrente máxima (em x = ±b)
-    j_max_a_a_per_m2 = (conductivity_s_per_m * omega * mu0 * 
-                        surface_magnetic_field_h0_a_per_m * np.sinh(b_over_delta))
-    
+    base = (surface_magnetic_field_h0_a_per_m ** 2) / (conductivity_s_per_m * delta_m)
+
     # ─────────────────────────────────────────────────────────────────────────
-    # VARIANTE (b): Campo aplicado em uma superfície (semi-espaço)
-    # 
-    # Coordenada: 0 ≤ y ≤ ∞ (semi-espaço)
-    # Condição de contorno: H_z(0) = H₀, H_z(∞) = 0
-    # 
-    # Solução: H_z(y) = H₀ exp(-y/δ)
-    # Densidade de corrente: J_x(y) = σωμ H₀ exp(-y/δ)
-    # 
-    # Perdas por unidade de área:
-    # P_b = ∫_0^∞ (|J_x|²/σ) dy = (H₀² / (σδ))
+    # VARIANTE (a): H(-b) = H0, H(+b) = H0  →  simétrico
+    # Ha(x) = H0 cosh(γx) / cosh(γb)
+    # Ja(x) = -γ H0 sinh(γx) / cosh(γb)
+    # P_a = H0²/(σδ) × [sinh(2Δ) - sin(2Δ)] / [cosh(2Δ) + cos(2Δ)]
     # ─────────────────────────────────────────────────────────────────────────
-    
-    p_b_w_per_m2 = (surface_magnetic_field_h0_a_per_m ** 2) / (conductivity_s_per_m * delta_m)
-    
-    # Densidade de corrente máxima (em y = 0)
-    j_max_b_a_per_m2 = conductivity_s_per_m * omega * mu0 * surface_magnetic_field_h0_a_per_m
-    
+    factor_a = (np.sinh(two_Delta) - np.sin(two_Delta)) / (np.cosh(two_Delta) + np.cos(two_Delta))
+    p_a_w_per_m2 = base * factor_a
+
     # ─────────────────────────────────────────────────────────────────────────
-    # VARIANTE (c): Ambas as superfícies limitadas (espaço finito)
-    # 
-    # Coordenada: 0 ≤ x ≤ b (espaço finito)
-    # Condição de contorno: H_z(0) = H₀, H_z(b) = 0
-    # 
-    # Solução: H_z(x) = H₀ sinh((b-x)/δ) / sinh(b/δ)
-    # 
-    # Perdas por unidade de área:
-    # P_c = (H₀² / (σδ)) · [1 / tanh(b/δ)]
+    # VARIANTE (b): H(-b) = H0, H(+b) = -H0  →  antissimétrico
+    # Hb(x) = -H0 sinh(γx) / sinh(γb)
+    # Jb(x) =  γ H0 cosh(γx) / sinh(γb)
+    # P_b = H0²/(σδ) × [sinh(2Δ) + sin(2Δ)] / [cosh(2Δ) - cos(2Δ)]
     # ─────────────────────────────────────────────────────────────────────────
-    
-    sinh_factor_c = np.sinh(b_over_delta)
-    coth_factor_c = 1.0 / tanh_factor_a  # coth = 1/tanh
-    p_c_w_per_m2 = (surface_magnetic_field_h0_a_per_m ** 2) * (1.0 / (conductivity_s_per_m * delta_m)) * coth_factor_c
-    
-    # Densidade de corrente máxima (em x = 0)
-    j_max_c_a_per_m2 = (conductivity_s_per_m * omega * mu0 * 
-                        surface_magnetic_field_h0_a_per_m * 
-                        (1.0 / np.tanh(b_over_delta)))
-    
+    factor_b = (np.sinh(two_Delta) + np.sin(two_Delta)) / (np.cosh(two_Delta) - np.cos(two_Delta))
+    p_b_w_per_m2 = base * factor_b
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # VARIANTE (c): H(-b) = H0, H(+b) = 0  →  assimétrico
+    # Hc = (Ha + Hb) / 2  →  P_c = (P_a + P_b) / 4
+    # ─────────────────────────────────────────────────────────────────────────
+    p_c_w_per_m2 = (p_a_w_per_m2 + p_b_w_per_m2) / 4.0
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Densidades de corrente máximas (x = ±b, módulo)
+    # γ = (1+j)/δ  →  |γ| = √2 / δ
+    # ─────────────────────────────────────────────────────────────────────────
+    gamma_mag = np.sqrt(2.0) / delta_m
+    # |sinh(γb)| = √[(cosh(2Δ)-cos(2Δ))/2], |cosh(γb)| = √[(cosh(2Δ)+cos(2Δ))/2]
+    mod_sinh_gb = np.sqrt((np.cosh(two_Delta) - np.cos(two_Delta)) / 2.0)
+    mod_cosh_gb = np.sqrt((np.cosh(two_Delta) + np.cos(two_Delta)) / 2.0)
+    j_max_a_a_per_m2 = gamma_mag * surface_magnetic_field_h0_a_per_m * mod_sinh_gb / mod_cosh_gb
+    j_max_b_a_per_m2 = gamma_mag * surface_magnetic_field_h0_a_per_m / mod_sinh_gb
+    j_max_c_a_per_m2 = (j_max_a_a_per_m2 + j_max_b_a_per_m2) / 2.0
+
     # ─────────────────────────────────────────────────────────────────────────
     # Notas físicas
     # ─────────────────────────────────────────────────────────────────────────
-    
     notes = []
-    
-    # Verificar profundidade de penetração
     if delta_mm > b_cm * 10:
         notes.append(f"⚠️ Skin depth δ={delta_mm:.2f} mm >> largura 2b={2*b_cm:.2f} cm: campo penetra uniformemente")
     elif delta_mm < b_cm:
         notes.append(f"✓ Skin depth δ={delta_mm:.2f} mm < largura 2b={2*b_cm:.2f} cm: forte efeito pelicular")
     else:
         notes.append(f"~ Skin depth δ={delta_mm:.2f} mm comparável à largura 2b={2*b_cm:.2f} cm")
-    
-    # Comparação entre variantes
-    notes.append(f"P_a/P_b = {p_a_w_per_m2/p_b_w_per_m2:.4f} (variante a é {'menor' if p_a_w_per_m2 < p_b_w_per_m2 else 'maior'})")
-    notes.append(f"P_c/P_b = {p_c_w_per_m2/p_b_w_per_m2:.4f} (variante c é {'menor' if p_c_w_per_m2 < p_b_w_per_m2 else 'maior'})")
-    
-    # Material e frequência
-    notes.append(f"Material: Cobre (σ={conductivity_s_per_m:.2e} S/m, μ_r={permeability_rel})")
+
+    notes.append(f"Δ = b/δ = {Delta:.4f}")
+    notes.append(f"P_a/P_b = {p_a_w_per_m2/p_b_w_per_m2:.4f}")
+    notes.append(f"P_c/P_b = {p_c_w_per_m2/p_b_w_per_m2:.4f}")
+    notes.append(f"Material: σ={conductivity_s_per_m:.2e} S/m, μ_r={permeability_rel}")
     notes.append(f"Operação: f={frequency_hz} Hz, H₀={surface_magnetic_field_h0_a_per_m} A/m")
     
     return Q4RectangularConductor(
@@ -200,12 +176,12 @@ def solve_question_04_rectangular_conductors(
         omega_rad_s=omega,
         skin_depth_m=delta_m,
         skin_depth_mm=delta_mm,
-        skin_depth_ratio_b_over_delta=b_over_delta,
+        skin_depth_ratio_b_over_delta=Delta,
         variant_a_power_loss_w_per_m2=p_a_w_per_m2,
-        variant_a_hyperbolic_factor=tanh_factor_a,
+        variant_a_factor=factor_a,
         variant_b_power_loss_w_per_m2=p_b_w_per_m2,
+        variant_b_factor=factor_b,
         variant_c_power_loss_w_per_m2=p_c_w_per_m2,
-        variant_c_hyperbolic_factor=coth_factor_c,
         max_current_density_var_a_a_per_m2=j_max_a_a_per_m2,
         max_current_density_var_b_a_per_m2=j_max_b_a_per_m2,
         max_current_density_var_c_a_per_m2=j_max_c_a_per_m2,
